@@ -1,0 +1,183 @@
+.article-card {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.article-card:hover {
+  border-color: var(--bg-tertiary);
+}
+
+/* 状态高亮样式 */
+.article-card.status-liked {
+  border-color: var(--success);
+  background: linear-gradient(135deg, var(--bg-secondary), rgba(0, 255, 136, 0.1));
+}
+
+.article-card.status-disliked {
+  border-color: var(--danger);
+  background: linear-gradient(135deg, var(--bg-secondary), rgba(255, 68, 102, 0.1));
+  opacity: 0.7;
+}
+
+.article-card.status-clicked {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, var(--bg-secondary), rgba(0, 217, 255, 0.1));
+}
+
+.article-card.status-skipped {
+  opacity: 0.5;
+}
+
+/* 状态标签 */
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.liked {
+  background: var(--success);
+  color: var(--bg-primary);
+}
+
+.status-badge.disliked {
+  background: var(--danger);
+  color: white;
+}
+
+.status-badge.clicked {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.status-badge.skipped {
+  background: var(--text-secondary);
+  color: var(--bg-primary);
+}
+
+.article-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.article-source {
+  background: var(--bg-tertiary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.article-score {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.article-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.article-title:hover {
+  color: var(--accent);
+}
+
+.article-abstract {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.article-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.article-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.article-stats .stat {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.article-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.article-actions button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.btn-like {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-like:hover {
+  background: var(--success);
+  color: var(--bg-primary);
+}
+
+.btn-dislike {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-dislike:hover {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-skip {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-skip:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* 按钮激活状态 */
+.btn-like.active {
+  background: var(--success);
+  color: var(--bg-primary);
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+}
+
+.btn-dislike.active {
+  background: var(--danger);
+  color: white;
+  box-shadow: 0 0 8px rgba(255, 68, 102, 0.4);
+}
+
+.btn-skip.active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  box-shadow: 0 0 8px rgba(128, 128, 128, 0.4);
+}

@@ -1,0 +1,55 @@
+[package]
+name = "zenflow"
+version = "0.1.0"
+description = "AI Paper & News Recommendation Agent"
+authors = ["ZenFlow Team"]
+edition = "2021"
+
+[lib]
+name = "zenflow_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+
+# Vector & Clustering
+ndarray = "0.15"
+linfa = "0.7"
+linfa-clustering = "0.7"
+
+# RSS Parsing
+feed-rs = "2"
+
+# HTTP Client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utils
+md5 = "0.7"
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.9"
