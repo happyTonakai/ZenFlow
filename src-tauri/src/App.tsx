@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { ArticleList } from "./components/ArticleList";
+import { WelcomeWizard } from "./components/WelcomeWizard";
 import { 
   useArticles, 
   useStats, 
   fetchNewArticles, 
   markAllRead, 
   refreshRecommendations,
-  checkInitialized 
+  checkInitialized,
+  needsInitialization,
 } from "./hooks/useArticles";
 import { ArticleStatus } from "./types/article";
 import "./App.css";
@@ -16,18 +18,36 @@ type FilterType = 'unread' | 'liked' | 'all';
 function App() {
   const [filter, setFilter] = useState<FilterType>('unread');
   const [isInitialized, setIsInitialized] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [fetching, setFetching] = useState(false);
 
   const statusFilter = filter === 'unread' ? ArticleStatus.UNREAD 
     : filter === 'liked' ? ArticleStatus.LIKED 
     : null;
 
-  const { articles, loading, error, updateArticleStatusLocal } = useArticles(statusFilter);
+  const { articles, loading, error, updateArticleStatusLocal, refetch: refetchArticles } = useArticles(statusFilter);
   const { stats, refetch: refetchStats } = useStats();
 
+  // Check initialization status on mount
   useEffect(() => {
-    checkInitialized().then(setIsInitialized);
+    const checkInit = async () => {
+      const needsInit = await needsInitialization();
+      setShowWizard(needsInit);
+      const initialized = await checkInitialized();
+      setIsInitialized(initialized);
+    };
+    checkInit();
   }, []);
+
+  // Handle wizard completion
+  const handleWizardComplete = async () => {
+    setShowWizard(false);
+    const initialized = await checkInitialized();
+    setIsInitialized(initialized);
+    // Refresh articles list
+    refetchArticles();
+    refetchStats();
+  };
 
   // 处理文章状态变化（就地更新）
   const handleStatusChange = (articleId: string, newStatus: number) => {
@@ -44,6 +64,8 @@ function App() {
     try {
       const count = await fetchNewArticles();
       console.log(`Fetched ${count} new articles`);
+      refetchArticles();
+      refetchStats();
     } catch (e) {
       console.error('Fetch failed:', e);
     } finally {
@@ -57,6 +79,7 @@ function App() {
       console.log(`Marked ${count} articles as read`);
       // 刷新统计
       refetchStats();
+      refetchArticles();
     } catch (e) {
       console.error('Mark all read failed:', e);
     }
@@ -66,10 +89,16 @@ function App() {
     try {
       const result = await refreshRecommendations();
       console.log('Refresh result:', result);
+      refetchArticles();
     } catch (e) {
       console.error('Refresh failed:', e);
     }
   };
+
+  // Show welcome wizard if not initialized
+  if (showWizard) {
+    return <WelcomeWizard onComplete={handleWizardComplete} />;
+  }
 
   return (
     <div className="app">

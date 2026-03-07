@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use crate::config;
+use crate::settings;
 
 /// Embedding API 请求
 #[derive(Serialize)]
@@ -38,9 +39,32 @@ impl EmbeddingClient {
             .build()
             .expect("Failed to create HTTP client");
         
+        // 优先从设置获取 API key
+        let api_key = settings::get_api_key().ok().flatten()
+            .or_else(|| config::siliconflow_api_key());
+        
         Self {
             client,
-            api_key: config::siliconflow_api_key(),
+            api_key,
+        }
+    }
+    
+    /// 使用指定 API Key 创建客户端
+    pub fn with_key(api_key: &str) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("Failed to create HTTP client");
+        
+        let api_key = if api_key.is_empty() {
+            None
+        } else {
+            Some(api_key.to_string())
+        };
+        
+        Self {
+            client,
+            api_key,
         }
     }
     

@@ -8,6 +8,7 @@ use ndarray::{Array1, Array2};
 
 use crate::config;
 use crate::db;
+use crate::settings;
 
 /// 聚类更新结果
 pub struct ClusterResult {
@@ -88,11 +89,14 @@ fn cluster_vectors_weighted(
     vectors: &[Array1<f32>],
     weights: &[f32],
 ) -> Result<Vec<Array1<f32>>> {
+    // 获取用户设置
+    let settings = settings::get_settings().unwrap_or_default();
+    
     if vectors.len() < config::CLUSTER_TRIGGER_THRESHOLD {
         return Ok(vec![]);
     }
     
-    let n_clusters = config::MAX_CLUSTERS.min(vectors.len());
+    let n_clusters = settings.pos_clusters.min(vectors.len());
     
     // 转换为 Array2<f32>
     let dim = vectors[0].len();
@@ -123,11 +127,14 @@ fn cluster_vectors_weighted(
 
 /// 对向量进行无权重的 K-Means 聚类
 fn cluster_vectors(vectors: &[Array1<f32>]) -> Result<Vec<Array1<f32>>> {
+    // 获取用户设置
+    let settings = settings::get_settings().unwrap_or_default();
+    
     if vectors.len() < config::CLUSTER_TRIGGER_THRESHOLD {
         return Ok(vec![]);
     }
     
-    let n_clusters = config::MAX_CLUSTERS.min(vectors.len());
+    let n_clusters = settings.neg_clusters.min(vectors.len());
     
     // 转换为 Array2<f32>
     let dim = vectors[0].len();
@@ -155,13 +162,18 @@ fn cluster_vectors(vectors: &[Array1<f32>]) -> Result<Vec<Array1<f32>>> {
 
 /// 重新计算所有未读文章的分数
 pub fn recalculate_all_scores() -> Result<usize> {
+    // 获取用户设置的 alpha
+    let settings = settings::get_settings().unwrap_or_default();
+    let alpha = settings.negative_alpha;
+    
     let pos_centroids = db::load_clusters("positive")?;
     let neg_centroids = db::load_clusters("negative")?;
     
     tracing::info!(
-        "📊 加载聚类: 正向={}, 负向={}",
+        "📊 加载聚类: 正向={}, 负向={}, α={}",
         pos_centroids.len(),
-        neg_centroids.len()
+        neg_centroids.len(),
+        alpha
     );
     
     if pos_centroids.is_empty() {
@@ -175,7 +187,7 @@ pub fn recalculate_all_scores() -> Result<usize> {
     let mut scores = Vec::new();
     for data in &unread_data {
         let vector = Array1::from_vec(data.vector.clone());
-        let score = super::compute_score(&vector, &pos_centroids, &neg_centroids);
+        let score = super::compute_score_with_alpha(&vector, &pos_centroids, &neg_centroids, alpha);
         scores.push((data.id.clone(), score));
     }
     

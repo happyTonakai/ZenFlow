@@ -24,6 +24,13 @@ CREATE TABLE IF NOT EXISTS clusters (
     centroid BLOB
 );
 
+-- 用户设置表
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_articles_score ON articles(score DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_timestamp ON articles(timestamp);

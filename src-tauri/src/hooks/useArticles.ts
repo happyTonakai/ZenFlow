@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Article, ArticleStatus, Stats } from '../types/article';
 
 export function useArticles(status: number | null, limit: number = 50) {
@@ -86,7 +87,7 @@ export function useArticles(status: number | null, limit: number = 50) {
   };
 }
 
-import { invoke } from '@tauri-apps/api/core';
+
 
 export function useStats() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -135,4 +136,63 @@ export async function refreshRecommendations() {
 
 export async function checkInitialized(): Promise<boolean> {
   return await invoke<boolean>('is_initialized');
+}
+
+// ========== 初始化和设置 ==========
+
+export interface AppSettings {
+  arxiv_categories: string[];
+  siliconflow_api_key: string;
+  pos_clusters: number;
+  neg_clusters: number;
+  daily_papers: number;
+  negative_alpha: number;
+  diversity_ratio: number;
+  enable_translation: boolean;
+  translation_model: string;
+}
+
+export interface InitRequest {
+  arxiv_categories: string[];
+  favorite_papers: string[];
+  siliconflow_api_key: string;
+  pos_clusters: number;
+  neg_clusters: number;
+  daily_papers: number;
+  negative_alpha: number;
+  diversity_ratio: number;
+  enable_translation: boolean;
+}
+
+export interface InitResult {
+  settings_saved: boolean;
+  papers_fetched: number;
+  papers_embedded: number;
+  pos_clusters: number;
+  neg_clusters: number;
+  errors: string[];
+}
+
+export async function needsInitialization(): Promise<boolean> {
+  return await invoke<boolean>('needs_initialization');
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  return await invoke<AppSettings>('get_settings');
+}
+
+export async function saveSettings(settings: AppSettings): Promise<void> {
+  await invoke('save_settings', { settings });
+}
+
+export async function initializeApp(request: InitRequest): Promise<InitResult> {
+  return await invoke<InitResult>('initialize_app', { request });
+}
+
+export async function getArxivCategories(): Promise<string[]> {
+  return await invoke<string[]>('get_arxiv_categories');
+}
+
+export async function translateText(text: string, apiKey?: string): Promise<string> {
+  return await invoke<string>('translate_text', { text, apiKey });
 }

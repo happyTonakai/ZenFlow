@@ -348,3 +348,69 @@ pub fn get_existing_article_ids(article_ids: &[String]) -> Result<std::collectio
     
     Ok(ids)
 }
+
+/// 获取设置值
+pub fn get_setting(key: &str) -> Result<Option<String>> {
+    let conn = get_db()?;
+    let result = conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    );
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 设置值
+pub fn set_setting(key: &str, value: &str) -> Result<()> {
+    let conn = get_db()?;
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?1, ?2, CURRENT_TIMESTAMP)",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+/// 批量设置
+pub fn set_settings(settings: &[(String, String)]) -> Result<()> {
+    let mut conn = get_db()?;
+    let tx = conn.transaction()?;
+    
+    for (key, value) in settings {
+        tx.execute(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?1, ?2, CURRENT_TIMESTAMP)",
+            params![key, value],
+        )?;
+    }
+    
+    tx.commit()?;
+    Ok(())
+}
+
+/// 获取所有设置
+pub fn get_all_settings() -> Result<std::collections::HashMap<String, String>> {
+    let conn = get_db()?;
+    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+    
+    let settings = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+    
+    Ok(settings)
+}
+
+/// 保存文章向量
+pub fn save_article_vector(article_id: &str, vector: &[f32]) -> Result<()> {
+    let conn = get_db()?;
+    let vector_blob = vector_to_blob(vector);
+    
+    conn.execute(
+        "UPDATE articles SET vector = ?1 WHERE id = ?2",
+        params![vector_blob, article_id],
+    )?;
+    
+    Ok(())
+}

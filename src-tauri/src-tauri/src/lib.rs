@@ -6,6 +6,7 @@ pub mod feed;
 pub mod embedding;
 pub mod algorithm;
 pub mod commands;
+pub mod settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -41,6 +42,15 @@ pub fn run() {
             commands::is_initialized,
             commands::get_stats,
             commands::clean_old_articles,
+            // 初始化和设置
+            commands::save_settings,
+            commands::get_settings,
+            commands::needs_initialization,
+            commands::reset_initialization,
+            commands::fetch_favorite_papers,
+            commands::initialize_app,
+            commands::get_arxiv_categories,
+            commands::translate_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

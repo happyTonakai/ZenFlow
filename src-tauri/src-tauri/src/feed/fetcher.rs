@@ -232,3 +232,9 @@ pub async fn fetch_arxiv_by_ids(ids: &[String]) -> Result<Vec<FetchedArticle>> {
     
     Ok(articles)
 }
+
+/// 获取单篇 arXiv 论文
+pub async fn fetch_arxiv_paper(id: &str) -> Result<FetchedArticle> {
+    let articles = fetch_arxiv_by_ids(&[id.to_string()]).await?;
+    articles.into_iter().next().ok_or_else(|| anyhow::anyhow!("未找到论文: {}", id))
+}

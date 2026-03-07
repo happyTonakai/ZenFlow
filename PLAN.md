@@ -1,8 +1,8 @@
-# ZenFlow Tauri v2 迁移计划
+# ZenFlow Tauri v2 开发计划
 
 ## 项目概述
 
-将 Python 原型 (`python_prototype/`) 迁移至 Tauri v2 + Rust 本地原生应用。
+AI 驱动的学术论文推荐系统。从 Python 原型迁移至 Tauri v2 + Rust 本地原生应用。
 
 ---
 
@@ -13,7 +13,7 @@
 | `0` | 未读 | ❌ |
 | `1` | 已点击（真正阅读） | ✅ 正向聚类，权重 1.0 |
 | `2` | 已点赞 | ✅ 正向聚类，权重 2.0 |
-| `3` | 批量标记已读 | ❌ 不参与聚类 |
+| `3` | 批量标记已读/跳过 | ❌ 不参与聚类 |
 | `-1` | 不喜欢 | ✅ 负向聚类 |
 
 **核心公式：**
@@ -21,19 +21,6 @@
 FinalScore = MaxSim(article, pos_centroids) - α * MaxSim(article, neg_centroids)
 α = 1.5 (对不喜欢内容更敏感)
 ```
-
----
-
-## 技术栈映射
-
-| 功能 | Python | Rust |
-|------|--------|------|
-| 数据库 | `sqlite3` | `rusqlite` + `r2d2` (连接池) |
-| 聚类 | `sklearn.cluster.KMeans` | `linfa-clustering` + `ndarray` |
-| RSS 解析 | `feedparser` | `feed-rs` |
-| HTTP 请求 | `requests` | `reqwest` + `tokio` |
-| 向量运算 | `numpy` | `ndarray` |
-| 前端 | `streamlit` | React (Vite) + Tauri v2 |
 
 ---
 
@@ -49,32 +36,33 @@ ZenFlow/
 │       ├── main.rs            # Tauri 入口
 │       ├── lib.rs             # 库导出
 │       ├── config.rs          # 配置常量
+│       ├── settings.rs        # 用户设置管理（含密钥链存储）
 │       ├── db/
 │       │   ├── mod.rs
-│       │   ├── schema.rs      # SQL schema
+│       │   ├── schema.rs      # SQL schema（articles, clusters, settings）
 │       │   ├── pool.rs        # 连接池
 │       │   └── operations.rs  # CRUD 操作
 │       ├── feed/
 │       │   ├── mod.rs
-│       │   ├── fetcher.rs     # RSS 抓取
-│       │   └── parser.rs      # 解析逻辑
+│       │   └── fetcher.rs     # RSS 抓取（开发模式读取本地文件）
 │       ├── embedding/
 │       │   ├── mod.rs
-│       │   └── client.rs      # SiliconFlow API
+│       │   └── client.rs      # SiliconFlow Embedding API
 │       ├── algorithm/
 │       │   ├── mod.rs
-│       │   ├── score.rs       # 计算推荐分数
+│       │   ├── score.rs       # 推荐分数计算
 │       │   └── cluster.rs     # K-Means 聚类
 │       └── commands/
 │           ├── mod.rs
-│           └── article.rs     # Tauri Commands
+│           ├── article.rs     # 文章相关 Commands
+│           └── init.rs        # 初始化向导 Commands
 ├── src/                       # React 前端
 │   ├── main.tsx
 │   ├── App.tsx
 │   ├── components/
 │   │   ├── ArticleList.tsx
-│   │   ├── ArticleCard.tsx
-│   │   └── FeedbackButtons.tsx
+│   │   ├── ArticleCard.tsx    # 含点赞/点踩/跳过按钮
+│   │   └── WelcomeWizard.tsx  # 初始化向导界面
 │   ├── hooks/
 │   │   └── useArticles.ts
 │   └── types/
@@ -86,133 +74,168 @@ ZenFlow/
 
 ---
 
-## 阶段一：项目初始化
+## 已完成 ✅
 
-### 1.1 创建 Tauri v2 项目
-- [ ] 使用 `npm create tauri-app@latest` 初始化
-- [ ] 配置 `src-tauri/tauri.conf.json`
+### 1. 项目基础架构
+- [x] Tauri v2 项目初始化
+- [x] React + Vite 前端配置
+- [x] 数据库 Schema（articles, clusters, settings 表）
+- [x] 数据库连接池
 
-### 1.2 配置 Cargo.toml 依赖
-```toml
-[dependencies]
-# Tauri
-tauri = { version = "2", features = ["shell-open"] }
-tauri-plugin-shell = "2"
+### 2. Rust 后端核心模块
+- [x] **数据库层** (`db/`)
+  - SQLite 单文件数据库（`~/.zenflow/zenflow.db`）
+  - 完整的 CRUD 操作
+  - 设置表支持
 
-# 异步运行时
-tokio = { version = "1", features = ["full"] }
+- [x] **RSS 抓取** (`feed/`)
+  - 开发模式：读取本地 `test_rss.xml`
+  - arXiv RSS 解析
+  - arXiv API 获取单篇论文
 
-# 数据库
-rusqlite = { version = "0.32", features = ["bundled"] }
-r2d2 = "0.8"
-r2d2_sqlite = "0.25"
+- [x] **Embedding API** (`embedding/`)
+  - SiliconFlow API 调用
+  - 支持自定义 API Key
+  - 自动从设置读取 API Key
 
-# 向量与聚类
-ndarray = "0.16"
-linfa = "0.7"
-linfa-clustering = "0.7"
-linfa-nn = "0.7"  # 可选，加速聚类
+- [x] **算法层** (`algorithm/`)
+  - K-Means 聚类（`linfa-clustering`）
+  - 余弦相似度计算
+  - 推荐分数计算（支持自定义 α）
 
-# RSS 解析
-feed-rs = "2"
+- [x] **用户设置** (`settings.rs`)
+  - 系统密钥链存储 API Key（macOS/Windows/Linux）
+  - 其他设置存 SQLite
+  - 全局缓存
 
-# HTTP 客户端
-reqwest = { version = "0.12", features = ["json"] }
+### 3. Tauri Commands
+- [x] `fetch_articles()` - 抓取新文章
+- [x] `get_articles(status, limit, offset)` - 获取文章列表
+- [x] `update_status(id, status)` - 更新状态
+- [x] `mark_all_read()` - 批量标记已读
+- [x] `refresh_recommendations()` - 重新计算聚类和分数
+- [x] `initialize_app()` - 初始化向导
+- [x] `get_settings()` / `save_settings()` - 设置管理
+- [x] `translate_text()` - SiliconFlow LLM 翻译
 
-# 序列化
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+### 4. React 前端
+- [x] **ArticleCard** - 文章卡片（标题、摘要、操作按钮）
+  - 按钮始终显示，当前状态高亮
+  - 点击激活状态可取消
+  - 点击标题打开链接，不覆盖点赞状态
 
-# 工具
-thiserror = "2"
-tracing = "0.1"
-tracing-subscriber = "0.3"
+- [x] **ArticleList** - 文章列表
+  - 标签页：未读 / 喜欢 / 全部
+  - 标签页感知的状态更新逻辑
+
+- [x] **WelcomeWizard** - 初始化向导
+  - 4 步流程：选择分类 → 添加论文 → 配置参数 → 完成
+  - Tag 输入交互（回车添加分类）
+  - 分类推荐快速选择
+  - API Key 密码输入（眼睛图标切换）
+  - 参数滑块（α、多样性比例）
+  - 翻译开关
+
+- [x] **状态管理**
+  - `useArticles` hook
+  - `useStats` hook
+  - 标签页感知的本地状态更新
+
+---
+
+## 待完成 ⏳
+
+### 阶段一：推荐展示优化
+- [ ] **混合推荐策略**
+  - 70% 高相似度 + 30% 随机探索
+  - 按用户配置的 `diversity_ratio` 调整
+  
+- [ ] **每日自动刷新**
+  - 定时任务抓取新 RSS
+  - 自动为新文章生成 embedding
+  - 重新计算推荐分数
+
+- [ ] **推荐分数可视化**
+  - 在 UI 显示每篇文章的推荐分数
+  - 显示与聚类的相似度
+
+### 阶段二：生产环境 RSS
+- [ ] **网络 RSS 抓取**
+  - 从 `settings.get_rss_feeds()` 获取订阅列表
+  - 异步并发抓取多个分类
+  - 错误处理和重试
+
+- [ ] **增量更新**
+  - 只抓取新发布的文章
+  - 基于文章 ID 去重
+  - 增量生成 embedding
+
+### 阶段三：增强功能
+- [ ] **翻译功能完善**
+  - 摘要自动翻译（使用 Qwen API）
+  - 翻译结果缓存
+  - 显示/隐藏翻译切换
+
+- [ ] **搜索功能**
+  - 本地标题/摘要搜索
+  - 基于向量的语义搜索
+
+- [ ] **数据导出**
+  - 导出喜欢的论文列表
+  - 导出聚类中心（用于迁移）
+
+### 阶段四：性能与体验
+- [ ] **大列表虚拟滚动**
+  - 当文章数量 > 1000 时优化性能
+
+- [ ] **离线支持**
+  - 无网络时显示已缓存文章
+  - 延迟同步机制
+
+- [ ] **错误处理**
+  - API 限流处理
+  - 网络错误重试
+  - 用户友好的错误提示
+
+---
+
+## 配置项说明
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `arxiv_categories` | `["cs.AI", "cs.LG", "cs.CL"]` | arXiv 分类列表 |
+| `siliconflow_api_key` | - | 存储在系统密钥链 |
+| `pos_clusters` | 5 | 正向聚类数量 |
+| `neg_clusters` | 3 | 负向聚类数量 |
+| `daily_papers` | 20 | 每日展示论文数 |
+| `negative_alpha` | 1.5 | 负向惩罚系数 |
+| `diversity_ratio` | 0.3 | 随机探索比例 |
+| `enable_translation` | true | 是否启用翻译 |
+| `translation_model` | `Qwen2.5-7B` | 翻译模型 |
+
+---
+
+## 本地开发
+
+```bash
+# 进入项目目录
+cd src-tauri
+
+# 安装依赖
+npm install
+
+# 开发模式（热更新）
+npm run tauri dev
+
+# 构建生产版本
+npm run tauri build
 ```
 
 ---
 
-## 阶段二：Rust 后端核心模块
+## 最近更新
 
-### 2.1 数据库层 (`db/`)
-- [ ] 定义 schema (articles, clusters 表)
-- [ ] 实现连接池管理
-- [ ] 实现 CRUD 操作：
-  - `save_article()`
-  - `update_status()`
-  - `get_articles(status, limit)`
-  - `get_vectors_by_status(statuses)`
-  - `save_clusters()`
-  - `load_clusters()`
-
-### 2.2 RSS 抓取 (`feed/`)
-- [ ] 使用 `feed-rs` 解析 RSS
-- [ ] 使用 `reqwest` 异步抓取
-- [ ] 支持 arXiv 特有字段解析
-
-### 2.3 Embedding API (`embedding/`)
-- [ ] 调用 SiliconFlow API
-- [ ] 错误处理与重试
-- [ ] 向量序列化/反序列化
-
-### 2.4 算法层 (`algorithm/`)
-
-**score.rs:**
-```rust
-pub fn compute_score(
-    article_vector: &Array1<f32>,
-    pos_centroids: &[Array1<f32>],
-    neg_centroids: &[Array1<f32>],
-    alpha: f32,  // 1.5
-) -> f32 {
-    // FinalScore = max(dot(article, pos)) - alpha * max(dot(article, neg))
-}
-```
-
-**cluster.rs:**
-```rust
-pub fn update_clusters(
-    pos_vectors: Vec<(Array1<f32>, f32)>,  // (vector, weight)
-    neg_vectors: Vec<Array1<f32>>,
-    max_clusters: usize,
-) -> (Vec<Array1<f32>>, Vec<Array1<f32>>);  // (pos_centroids, neg_centroids)
-```
-
-### 2.5 Tauri Commands (`commands/`)
-- [ ] `fetch_articles()` - 抓取新文章
-- [ ] `get_articles(status, limit, offset)` - 获取文章列表
-- [ ] `update_status(id, status)` - 更新状态
-- [ ] `refresh_scores()` - 重新计算分数
-- [ ] `mark_all_read()` - 批量标记已读 (status=3)
-
----
-
-## 阶段三：React 前端
-
-### 3.1 基础组件
-- [ ] ArticleList - 文章列表
-- [ ] ArticleCard - 单篇文章卡片
-- [ ] FeedbackButtons - 反馈按钮 (点击/点赞/不喜欢/跳过)
-
-### 3.2 状态管理
-- [ ] 使用 React Query 或 SWR 管理 API 状态
-- [ ] 实现 optimistic updates
-
-### 3.3 UI 设计
-- [ ] 按 score 排序展示
-- [ ] 未读/已读筛选
-- [ ] 批量操作
-
----
-
-## 阶段四：集成与优化
-
-- [ ] 端到端测试
-- [ ] 性能优化 (大列表虚拟滚动)
-- [ ] 错误边界处理
-- [ ] 打包发布
-
----
-
-## 当前进度
-
-**正在进行：阶段一 - 项目初始化**
+- **2025-03-07**: 实现初始化向导界面
+- **2025-03-07**: API Key 改用系统密钥链存储
+- **2025-03-07**: 完善文章状态交互逻辑（标签页感知）
+- **2025-03-07**: Tauri v2 + Rust 架构迁移完成
