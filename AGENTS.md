@@ -4,12 +4,12 @@
 
 ## Project Overview
 
-A personal RSS-based recommendation agent that learns user preferences through feedback (like, click, dislike) and uses vector space clustering to recommend daily content.
+A personal RSS-based recommendation agent that learns user preferences through feedback (like, click, dislike) and uses vector space clustering to recommend daily content. Features community voting integration and intelligent scoring with weighted feedback.
 
 **Tech Stack:**
 - Python 3.10+
 - SQLite (local single file)
-- Streamlit (Web UI)
+- FastAPI + Uvicorn (Web server)
 - NumPy + Scikit-learn (K-Means clustering)
 - SiliconFlow Embedding API (BAAI/bge-m3)
 - feedparser (RSS/Arxiv fetching)
@@ -18,11 +18,12 @@ A personal RSS-based recommendation agent that learns user preferences through f
 
 ```
 ZenFlow/
-├── main.py           # Streamlit app entry point
+├── main.py           # FastAPI app entry point
 ├── engine.py         # RSS fetching, API calls, DB interactions
 ├── algorithm.py      # Clustering & similarity calculations
-├── config.py         # RSS feeds list, API keys
+├── config.py         # RSS feeds list, API keys, algorithm params
 ├── schema.sql        # Database initialization
+├── preferences.txt   # Initial preference articles (arXiv URLs)
 ├── pyproject.toml    # uv project config (auto-generated)
 └── zenflow.db        # SQLite database (auto-generated)
 ```
@@ -37,7 +38,7 @@ ZenFlow/
 uv init
 
 # Add dependencies
-uv add streamlit feedparser numpy scikit-learn
+uv add fastapi uvicorn feedparser numpy scikit-learn requests
 
 # Add dev dependencies
 uv add --dev pytest ruff
@@ -45,7 +46,7 @@ uv add --dev pytest ruff
 
 ### Run Application
 ```bash
-streamlit run main.py
+uv run uvicorn main:app --reload
 ```
 
 ### Lint & Format
@@ -139,11 +140,11 @@ sqlite3 zenflow.db "SELECT * FROM articles LIMIT 10;"
 - Use pytest fixtures for common setup
 - Aim for 80%+ coverage on core algorithms
 
-### Streamlit UI
-- Keep UI code minimal in `main.py`
+### FastAPI Server
+- Keep routes minimal in `main.py`
 - Extract logic to separate modules
-- Use `st.cache_data` for expensive operations
-- Handle exceptions gracefully with `st.error()`
+- Use global cache for article data
+- Handle exceptions gracefully with HTTP status codes
 
 ---
 
@@ -153,19 +154,33 @@ sqlite3 zenflow.db "SELECT * FROM articles LIMIT 10;"
 Store API keys in environment variables (never commit):
 ```python
 import os
-API_KEY = os.environ.get("SILICONFLOW_API_KEY")
-RSS_FEEDS = [...]  # List of RSS URLs
+SILICONFLOW_API_KEY = os.environ.get("SILICONFLOW_API_KEY")
+BAIDU_FANYI_APPID = os.environ.get("BAIDU_FANYI_APPID")
+BAIDU_FANYI_APPKEY = os.environ.get("BAIDU_FANYI_APPKEY")
+
+# Algorithm parameters
+NEGATIVE_PENALTY_ALPHA = 1.5  # 负向惩罚系数
+WEIGHT_LIKED = 2.0            # 点赞权重
+WEIGHT_CLICKED = 1.0          # 点击权重
+DIVERSITY_RATIO = 0.3         # 多样性推荐比例
+CLUSTER_TRIGGER_THRESHOLD = 5 # 聚类触发阈值
 ```
 
 ### engine.py
 - `fetch_feeds()`: Fetch from RSS/Arxiv
+- `fetch_arxiv_by_ids(arxiv_ids)`: Fetch specific arXiv papers by ID
 - `embed_text(text)`: Call embedding API
 - `save_article(article)`: Insert/update article in DB
+- `get_community_votes(arxiv_id)`: Fetch votes from AlphaXiv + HuggingFace
+- `is_initialized()`: Check if system has enough preference data (>=5 liked)
+- `load_today_articles()`: Load articles into memory cache
+- `get_cached_articles()`: Get cached articles from memory
 
 ### algorithm.py
-- `compute_score(article_vector, pos_centroids, neg_centroids)`: Cosine similarity
-- `update_clusters(vectors, n_clusters)`: K-Means clustering
-- `get_recommended_articles(limit=20)`: Fetch top-scored articles
+- `compute_score(article_vector, pos_centroids, neg_centroids, alpha=1.5)`: Weighted similarity scoring
+- `update_clusters()`: K-Means clustering with weighted feedback
+- `calculate_all_scores()`: Recalculate all article scores
+- `get_diverse_recommendations(limit, offset)`: Get grouped recommendations (70% score + 30% diverse)
 
 ---
 
@@ -174,21 +189,27 @@ RSS_FEEDS = [...]  # List of RSS URLs
 ### articles
 | Field | Type | Description |
 |-------|------|-------------|
-| id | TEXT PK | MD5 of URL or original URL |
+| id | TEXT PK | arXiv ID (e.g., "2506.14724") |
 | title | TEXT | Article title |
 | link | TEXT | Original link |
 | abstract | TEXT | Summary content |
 | source | TEXT | 'news' or 'arxiv' |
-| vector | BLOB | NumPy array (serialized) |
+| vector | BLOB | NumPy array (serialized, float32) |
 | status | INT | 0:unread, 1:clicked, 2:liked, -1:disliked |
 | score | FLOAT | Recommendation score |
+| translated_abstract | TEXT | Baidu translated abstract |
+| hf_upvotes | INT | HuggingFace Papers upvotes |
+| ax_upvotes | INT | AlphaXiv upvotes |
+| ax_downvotes | INT | AlphaXiv downvotes |
+| votes_updated_at | DATETIME | Last vote update time |
 | timestamp | DATETIME | Fetch time |
 
 ### clusters
 | Field | Type | Description |
 |-------|------|-------------|
-| type | TEXT PK | 'positive' or 'negative' |
-| centroid | BLOB | Cluster center vector |
+| id | INT PK | Auto-increment ID |
+| type | TEXT | 'positive' or 'negative' |
+| centroid | BLOB | Cluster center vector (float32) |
 
 ---
 
@@ -198,23 +219,39 @@ RSS_FEEDS = [...]  # List of RSS URLs
 2. **Run tests**: `pytest -v`
 3. **Format code**: `ruff format .`
 4. **Check lint**: `ruff check .`
-5. **Test manually**: `streamlit run main.py`
+5. **Test manually**: `uv run uvicorn main:app --reload`
 
 ---
 
 ## Key Algorithms
 
-### Scoring
+### Scoring Formula
 ```python
-def compute_score(article_vector, pos_centroids, neg_centroids):
+def compute_score(article_vector, pos_centroids, neg_centroids, alpha=1.5):
+    """
+    FinalScore = MaxSim(正向) - α * MaxSim(负向)
+    α > 1 表示对不喜欢的内容更敏感
+    """
     p_sim = max(dot(article_vector, c) for c in pos_centroids) if pos_centroids else 0
     n_sim = max(dot(article_vector, c) for c in neg_centroids) if neg_centroids else 0
-    return p_sim - n_sim
+    return p_sim - alpha * n_sim
 ```
 
-### Clustering Trigger
-- Re-cluster when累计 10+ new feedback interactions
-- K-Means with up to 10 clusters for positive, 10 for negative
+### Weighted Clustering
+- **Positive clusters**: Use clicked (status=1, weight=1.0) + liked (status=2, weight=2.0)
+- **Negative clusters**: Use disliked (status=-1)
+- Trigger when >= 5 feedback articles available
+- K-Means with up to 10 clusters per type
+
+### Recommendation Groups
+- **70% Score-based**: Top articles by recommendation score
+- **30% Diversity**: Random selection from remaining, still sorted by score
+- Supports pagination with offset
+
+### Community Voting
+- Fetches votes from HuggingFace Papers and AlphaXiv
+- Cached in database, can be refreshed on demand
+- Display: 🤗 HuggingFace upvotes, 🔬 AlphaXiv net votes
 
 ---
 
@@ -222,4 +259,8 @@ def compute_score(article_vector, pos_centroids, neg_centroids):
 
 - All API keys must be set via environment variables
 - Database is auto-created on first run
-- Sliding window: auto-delete articles older than 30 days
+- **Initialization required**: System needs >= 5 liked articles before recommendations work
+- Use `preferences.txt` to import initial preference articles (arXiv URLs)
+- DEBUG mode: Set `DEBUG=true` environment variable for verbose logging
+- Articles are cached in memory for performance
+- Translation cache TTL: 1 hour
