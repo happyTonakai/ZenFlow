@@ -8,14 +8,20 @@ CREATE TABLE IF NOT EXISTS articles (
     status INTEGER DEFAULT 0,
     score REAL DEFAULT 0.0,
     translated_abstract TEXT,
+    hf_upvotes INTEGER,
+    ax_upvotes INTEGER,
+    ax_downvotes INTEGER,
+    votes_updated_at DATETIME,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS clusters (
-    type TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
     centroid BLOB
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_articles_score ON articles(score DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_timestamp ON articles(timestamp);
+CREATE INDEX IF NOT EXISTS idx_clusters_type ON clusters(type);

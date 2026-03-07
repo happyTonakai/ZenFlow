@@ -1,5 +1,7 @@
 # ZenFlow - AI Paper & News Recommendation Agent
 
+**IMPORTANT: Always use `uv run` instead of `python` to run Python commands.**
+
 ## Project Overview
 
 A personal RSS-based recommendation agent that learns user preferences through feedback (like, click, dislike) and uses vector space clustering to recommend daily content.
