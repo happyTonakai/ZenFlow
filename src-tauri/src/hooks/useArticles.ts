@@ -1,6 +1,35 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { Article, ArticleStatus, Stats } from '../types/article';
+
+/// 初始化进度事件
+export interface InitProgress {
+  stage: string;
+  message: string;
+  progress: number;
+  detail?: string;
+}
+
+/// 进度事件监听器
+let progressUnlisten: UnlistenFn | null = null;
+
+export async function onInitProgress(callback: (progress: InitProgress) => void): Promise<UnlistenFn> {
+  if (progressUnlisten) {
+    progressUnlisten();
+  }
+  progressUnlisten = await listen<InitProgress>('init-progress', (event) => {
+    callback(event.payload);
+  });
+  return progressUnlisten;
+}
+
+export async function offInitProgress(): Promise<void> {
+  if (progressUnlisten) {
+    progressUnlisten();
+    progressUnlisten = null;
+  }
+}
 
 export function useArticles(status: number | null, limit: number = 50) {
   const [articles, setArticles] = useState<Article[]>([]);
@@ -23,6 +52,21 @@ export function useArticles(status: number | null, limit: number = 50) {
       setLoading(false);
     }
   }, [status, limit]);
+
+  // 获取推荐文章（70% 分数排序 + 30% 随机多样性）
+  // @ts-ignore
+  const fetchRecommendedArticles = useCallback(async (limit: number = 50) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await invoke<Article[]>('get_recommended_articles');
+      setArticles(result.slice(0, limit));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchArticles();
@@ -83,6 +127,7 @@ export function useArticles(status: number | null, limit: number = 50) {
     loading, 
     error, 
     refetch: fetchArticles,
+    fetchRecommendedArticles,
     updateArticleStatusLocal 
   };
 }
@@ -143,33 +188,47 @@ export async function checkInitialized(): Promise<boolean> {
 export interface AppSettings {
   arxiv_categories: string[];
   siliconflow_api_key: string;
+  // 嵌入向量 API 配置
+  embedding_api_base_url: string;
+  embedding_api_key: string;
+  embedding_model: string;
+  // 翻译 API 配置
+  translation_api_base_url: string;
+  translation_api_key: string;
+  translation_model: string;
+  // 推荐参数
   pos_clusters: number;
   neg_clusters: number;
   daily_papers: number;
   negative_alpha: number;
   diversity_ratio: number;
-  enable_translation: boolean;
-  translation_model: string;
 }
 
 export interface InitRequest {
   arxiv_categories: string[];
   favorite_papers: string[];
   siliconflow_api_key: string;
+  // 嵌入向量 API 配置
+  embedding_api_base_url: string;
+  embedding_api_key: string;
+  embedding_model: string;
+  // 翻译 API 配置
+  translation_api_base_url: string;
+  translation_api_key: string;
+  translation_model: string;
+  // 推荐参数
   pos_clusters: number;
   neg_clusters: number;
   daily_papers: number;
   negative_alpha: number;
   diversity_ratio: number;
-  enable_translation: boolean;
 }
 
 export interface InitResult {
   settings_saved: boolean;
-  papers_fetched: number;
-  papers_embedded: number;
-  pos_clusters: number;
-  neg_clusters: number;
+  papers_fetched: number;   // 偏好论文 + RSS 抓取文章
+  papers_embedded: number;  // 生成向量的文章数
+  pos_clusters: number;     // 正向偏好论文数量
   errors: string[];
 }
 
@@ -195,4 +254,26 @@ export async function getArxivCategories(): Promise<string[]> {
 
 export async function translateText(text: string, apiKey?: string): Promise<string> {
   return await invoke<string>('translate_text', { text, apiKey });
+}
+
+// 批量翻译请求
+export interface TranslateRequest {
+  id: string;
+  title: string;
+  abstract_text: string;
+}
+
+// 批量翻译结果
+export interface TranslateResult {
+  id: string;
+  title: string;
+  abstract_text: string;
+}
+
+export async function translateBatch(papers: TranslateRequest[]): Promise<TranslateResult[]> {
+  return await invoke<TranslateResult[]>('translate_batch', { papers });
+}
+
+export async function requestKeychainAccess(apiKey: string): Promise<boolean> {
+  return await invoke<boolean>('request_keychain_access', { apiKey });
 }

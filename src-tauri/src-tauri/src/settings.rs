@@ -9,7 +9,9 @@ use std::sync::Mutex;
 use crate::db::operations::{get_all_settings, get_setting, set_setting};
 
 const KEYRING_SERVICE: &str = "com.zenflow.app";
-const KEYRING_USERNAME: &str = "siliconflow_api_key";
+const KEYRING_USERNAME_SILICONFLOW: &str = "siliconflow_api_key";
+const KEYRING_USERNAME_EMBEDDING: &str = "embedding_api_key";
+const KEYRING_USERNAME_TRANSLATION: &str = "translation_api_key";
 
 /// 应用设置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +21,20 @@ pub struct AppSettings {
     /// SiliconFlow API Key (存储在系统密钥链)
     #[serde(skip)]
     pub siliconflow_api_key: String,
+    /// 嵌入向量 API Base URL
+    pub embedding_api_base_url: String,
+    /// 嵌入向量 API Key (存储在系统密钥链)
+    #[serde(skip)]
+    pub embedding_api_key: String,
+    /// 嵌入向量模型
+    pub embedding_model: String,
+    /// 翻译 API Base URL
+    pub translation_api_base_url: String,
+    /// 翻译 API Key (存储在系统密钥链)
+    #[serde(skip)]
+    pub translation_api_key: String,
+    /// 翻译模型
+    pub translation_model: String,
     /// 正向聚类数量
     pub pos_clusters: usize,
     /// 负向聚类数量
@@ -29,15 +45,11 @@ pub struct AppSettings {
     pub negative_alpha: f32,
     /// 多样性比例 (0-1)，即随机推荐占比
     pub diversity_ratio: f32,
-    /// 是否启用翻译
-    pub enable_translation: bool,
-    /// 翻译模型
-    pub translation_model: String,
 }
 
 /// 从系统密钥链获取 API Key
-fn get_api_key_from_keyring() -> Option<String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USERNAME).ok()?;
+fn get_api_key_from_keyring(username: &str) -> Option<String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, username).ok()?;
     match entry.get_password() {
         Ok(key) if !key.is_empty() => Some(key),
         _ => None,
@@ -45,16 +57,16 @@ fn get_api_key_from_keyring() -> Option<String> {
 }
 
 /// 保存 API Key 到系统密钥链
-fn save_api_key_to_keyring(api_key: &str) -> anyhow::Result<()> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USERNAME)?;
+pub fn save_api_key_to_keyring(username: &str, api_key: &str) -> anyhow::Result<()> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, username)?;
     entry.set_password(api_key)?;
     Ok(())
 }
 
 /// 删除系统密钥链中的 API Key
 #[allow(dead_code)]
-fn delete_api_key_from_keyring() -> anyhow::Result<()> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USERNAME)?;
+fn delete_api_key_from_keyring(username: &str) -> anyhow::Result<()> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, username)?;
     entry.delete_credential()?;
     Ok(())
 }
@@ -64,13 +76,17 @@ impl Default for AppSettings {
         Self {
             arxiv_categories: vec!["cs.AI".to_string(), "cs.LG".to_string(), "cs.CL".to_string()],
             siliconflow_api_key: String::new(),
+            embedding_api_base_url: "https://api.siliconflow.cn/v1".to_string(),
+            embedding_api_key: String::new(),
+            embedding_model: "BAAI/bge-m3".to_string(),
+            translation_api_base_url: "https://api.openai.com/v1".to_string(),
+            translation_api_key: String::new(),
+            translation_model: "gpt-3.5-turbo".to_string(),
             pos_clusters: 5,
             neg_clusters: 3,
             daily_papers: 20,
             negative_alpha: 1.5,
             diversity_ratio: 0.3,
-            enable_translation: true,
-            translation_model: "Qwen/Qwen2.5-7B-Instruct".to_string(),
         }
     }
 }
@@ -91,44 +107,54 @@ impl AppSettings {
         }
         
         // 从系统密钥链获取 API Key
-        settings.siliconflow_api_key = get_api_key_from_keyring().unwrap_or_default();
+        settings.siliconflow_api_key = get_api_key_from_keyring(KEYRING_USERNAME_SILICONFLOW).unwrap_or_default();
+        settings.embedding_api_key = get_api_key_from_keyring(KEYRING_USERNAME_EMBEDDING).unwrap_or_default();
+        settings.translation_api_key = get_api_key_from_keyring(KEYRING_USERNAME_TRANSLATION).unwrap_or_default();
+        
+        // 嵌入向量 API 配置
+        if let Some(v) = settings_map.get("embedding_api_base_url") {
+            settings.embedding_api_base_url = v.clone();
+        }
+        if let Some(v) = settings_map.get("embedding_model") {
+            settings.embedding_model = v.clone();
+        }
+        
+        // 翻译 API 配置
+        if let Some(v) = settings_map.get("translation_api_base_url") {
+            settings.translation_api_base_url = v.clone();
+        }
+        if let Some(v) = settings_map.get("translation_model") {
+            settings.translation_model = v.clone();
+        }
         
         if let Some(v) = settings_map.get("pos_clusters") {
-            if let Ok(n) = v.parse() {
+            if let Ok(n) = v.parse::<usize>() {
                 settings.pos_clusters = n;
             }
         }
         
         if let Some(v) = settings_map.get("neg_clusters") {
-            if let Ok(n) = v.parse() {
+            if let Ok(n) = v.parse::<usize>() {
                 settings.neg_clusters = n;
             }
         }
         
         if let Some(v) = settings_map.get("daily_papers") {
-            if let Ok(n) = v.parse() {
+            if let Ok(n) = v.parse::<usize>() {
                 settings.daily_papers = n;
             }
         }
         
         if let Some(v) = settings_map.get("negative_alpha") {
-            if let Ok(f) = v.parse() {
+            if let Ok(f) = v.parse::<f32>() {
                 settings.negative_alpha = f;
             }
         }
         
         if let Some(v) = settings_map.get("diversity_ratio") {
-            if let Ok(f) = v.parse() {
+            if let Ok(f) = v.parse::<f32>() {
                 settings.diversity_ratio = f.clamp(0.0, 1.0);
             }
-        }
-        
-        if let Some(v) = settings_map.get("enable_translation") {
-            settings.enable_translation = v == "true";
-        }
-        
-        if let Some(model) = settings_map.get("translation_model") {
-            settings.translation_model = model.clone();
         }
         
         Ok(settings)
@@ -139,15 +165,26 @@ impl AppSettings {
         set_setting("arxiv_categories", &self.arxiv_categories.join(","))?;
         // API Key 保存到系统密钥链
         if !self.siliconflow_api_key.is_empty() {
-            save_api_key_to_keyring(&self.siliconflow_api_key)?;
+            save_api_key_to_keyring(KEYRING_USERNAME_SILICONFLOW, &self.siliconflow_api_key)?;
         }
+        if !self.embedding_api_key.is_empty() {
+            save_api_key_to_keyring(KEYRING_USERNAME_EMBEDDING, &self.embedding_api_key)?;
+        }
+        if !self.translation_api_key.is_empty() {
+            save_api_key_to_keyring(KEYRING_USERNAME_TRANSLATION, &self.translation_api_key)?;
+        }
+        // 嵌入向量 API 配置
+        set_setting("embedding_api_base_url", &self.embedding_api_base_url)?;
+        set_setting("embedding_model", &self.embedding_model)?;
+        // 翻译 API 配置
+        set_setting("translation_api_base_url", &self.translation_api_base_url)?;
+        set_setting("translation_model", &self.translation_model)?;
+        // 推荐参数
         set_setting("pos_clusters", &self.pos_clusters.to_string())?;
         set_setting("neg_clusters", &self.neg_clusters.to_string())?;
         set_setting("daily_papers", &self.daily_papers.to_string())?;
         set_setting("negative_alpha", &self.negative_alpha.to_string())?;
         set_setting("diversity_ratio", &self.diversity_ratio.to_string())?;
-        set_setting("enable_translation", &self.enable_translation.to_string())?;
-        set_setting("translation_model", &self.translation_model)?;
         Ok(())
     }
     

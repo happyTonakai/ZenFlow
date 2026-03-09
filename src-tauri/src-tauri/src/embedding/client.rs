@@ -30,6 +30,8 @@ struct EmbeddingData {
 pub struct EmbeddingClient {
     client: Client,
     api_key: Option<String>,
+    base_url: String,
+    model: String,
 }
 
 impl EmbeddingClient {
@@ -39,18 +41,40 @@ impl EmbeddingClient {
             .build()
             .expect("Failed to create HTTP client");
         
-        // 优先从设置获取 API key
-        let api_key = settings::get_api_key().ok().flatten()
+        // 从设置中获取 API 配置
+        let settings = settings::get_settings().ok();
+        
+        let api_key = settings
+            .as_ref()
+            .and_then(|s| {
+                if !s.embedding_api_key.is_empty() {
+                    Some(s.embedding_api_key.clone())
+                } else {
+                    None
+                }
+            })
             .or_else(|| config::siliconflow_api_key());
+        
+        let base_url = settings
+            .as_ref()
+            .map(|s| s.embedding_api_base_url.clone())
+            .unwrap_or_else(|| "https://api.siliconflow.cn/v1".to_string());
+        
+        let model = settings
+            .as_ref()
+            .map(|s| s.embedding_model.clone())
+            .unwrap_or_else(|| "BAAI/bge-m3".to_string());
         
         Self {
             client,
             api_key,
+            base_url,
+            model,
         }
     }
     
-    /// 使用指定 API Key 创建客户端
-    pub fn with_key(api_key: &str) -> Self {
+    /// 使用指定 API 配置创建客户端
+    pub fn with_config(base_url: &str, api_key: &str, model: &str) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
@@ -65,23 +89,27 @@ impl EmbeddingClient {
         Self {
             client,
             api_key,
+            base_url: base_url.to_string(),
+            model: model.to_string(),
         }
     }
     
     /// 获取文本的向量表示
     pub async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         let api_key = self.api_key.as_ref()
-            .ok_or_else(|| anyhow!("SILICONFLOW_API_KEY not set"))?;
+            .ok_or_else(|| anyhow!("Embedding API key not set"))?;
         
         let truncated_text: String = text.chars().take(config::EMBEDDING_TEXT_MAX_LENGTH).collect();
         
         let request = EmbeddingRequest {
-            model: config::EMBEDDING_MODEL.to_string(),
+            model: self.model.clone(),
             input: truncated_text,
         };
         
+        let url = format!("{}/embeddings", self.base_url.trim_end_matches('/'));
+        
         let response = self.client
-            .post(config::SILICONFLOW_API_URL)
+            .post(&url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&request)

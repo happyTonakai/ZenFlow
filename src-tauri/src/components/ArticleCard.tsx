@@ -1,6 +1,8 @@
 import { Article, ArticleStatus } from '../types/article';
 import { updateArticleStatus } from '../hooks/useArticles';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import './ArticleCard.css';
 
 interface ArticleCardProps {
@@ -9,7 +11,76 @@ interface ArticleCardProps {
   currentTab: number | null; // 当前所在标签页
 }
 
-export function ArticleCard({ article, onStatusChange, currentTab }: ArticleCardProps) {
+// Split a string into alternating [text, math, text, math, ...] tokens.
+// Supports: $$...$$, $...$, \[...\], \(...\)
+function splitLatex(input: string): { math: boolean; display: boolean; content: string }[] {
+  const RE = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)/g;
+  const tokens: { math: boolean; display: boolean; content: string }[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = RE.exec(input)) !== null) {
+    if (match.index > lastIndex) {
+      tokens.push({ math: false, display: false, content: input.slice(lastIndex, match.index) });
+    }
+    const isDisplay = match[1] !== undefined || match[3] !== undefined;
+    const mathContent = match[1] ?? match[2] ?? match[3] ?? match[4] ?? '';
+    tokens.push({ math: true, display: isDisplay, content: mathContent });
+    lastIndex = RE.lastIndex;
+  }
+  if (lastIndex < input.length) {
+    tokens.push({ math: false, display: false, content: input.slice(lastIndex) });
+  }
+  return tokens;
+}
+
+interface LatexTextProps {
+  text: string;
+  className?: string;
+  onClick?: () => void;
+}
+
+// Renders a string that may contain LaTeX math delimiters.
+function LatexText({ text, className, onClick }: LatexTextProps) {
+  const tokens = splitLatex(text);
+  return (
+    <span className={className} onClick={onClick}>
+      {tokens.map((token, i) => {
+        if (!token.math) {
+          return <span key={i}>{token.content}</span>;
+        }
+        try {
+          const html = katex.renderToString(token.content, {
+            displayMode: token.display,
+            throwOnError: false,
+            output: 'html',
+          });
+          return (
+            <span
+              key={i}
+              dangerouslySetInnerHTML={{ __html: html }}
+              style={token.display ? { display: 'block', textAlign: 'center', margin: '4px 0' } : undefined}
+            />
+          );
+        } catch {
+          // Fallback: render raw source
+          return <span key={i}>{token.display ? `$$${token.content}$$` : `$${token.content}$`}</span>;
+        }
+      })}
+    </span>
+  );
+}
+
+// 格式化作者：超过5个显示前3个+后2个+et. al.
+function formatAuthors(author: string | null): string {
+  if (!author) return '';
+  const authors = author.split(',').map(a => a.trim());
+  if (authors.length <= 5) {
+    return author;
+  }
+  return `${authors.slice(0, 3).join(', ')}, ${authors.slice(-2).join(', ')}, et. al.`;
+}
+
+export function ArticleCard({ article, onStatusChange, currentTab: _currentTab }: ArticleCardProps) {
   // 处理点赞/点踩/跳过
   const handleStatus = async (newStatus: number) => {
     try {
@@ -82,17 +153,29 @@ export function ArticleCard({ article, onStatusChange, currentTab }: ArticleCard
       <div className="article-header">
         <span className="article-source">{article.source}</span>
         <span className="article-score">Score: {article.score.toFixed(3)}</span>
+        {article.category && <span className="article-category">{article.category}</span>}
         {getStatusBadge()}
       </div>
       
-      <h3 className="article-title" onClick={openLink}>
-        {article.title}
+      <h3 className="article-title">
+        <LatexText text={article.translated_title || article.title} onClick={openLink} />
       </h3>
+      
+      {article.translated_title && article.title && (
+        <p className="article-original-title">
+          <LatexText text={article.title} />
+        </p>
+      )}
+      
+      {article.author && (
+        <p className="article-author">
+          {formatAuthors(article.author)}
+        </p>
+      )}
       
       {article.abstract && (
         <p className="article-abstract">
-          {article.abstract.slice(0, 300)}
-          {article.abstract.length > 300 ? '...' : ''}
+          <LatexText text={article.abstract} />
         </p>
       )}
       

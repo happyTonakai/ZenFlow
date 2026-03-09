@@ -18,11 +18,15 @@ export interface Article {
   source: string;
   status: number;
   score: number;
+  translated_title: string | null;
   translated_abstract: string | null;
   hf_upvotes: number | null;
   ax_upvotes: number | null;
   ax_downvotes: number | null;
   timestamp: string | null;
+  author: string | null;
+  category: string | null;
+  recommendationType?: 'score' | 'diversity';
 }
 
 // 统计数据

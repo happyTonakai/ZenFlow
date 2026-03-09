@@ -6,6 +6,7 @@ use crate::algorithm;
 use crate::db;
 use crate::embedding;
 use crate::feed;
+use crate::settings;
 
 /// 抓取新文章（从本地测试文件）
 #[tauri::command]
@@ -34,7 +35,10 @@ pub async fn fetch_articles() -> Result<usize, String> {
             abstract_text: a.abstract_text,
             source: a.source,
             vector: None,
+            translated_title: None,
             translated_abstract: None,
+            author: a.author,
+            category: a.category,
         })
         .collect();
     
@@ -42,11 +46,33 @@ pub async fn fetch_articles() -> Result<usize, String> {
         .map_err(|e| format!("保存失败: {}", e))
 }
 
-/// 为新文章生成向量
+/// 为新文章生成向量（只处理还没有向量的文章）
 #[tauri::command]
 pub async fn generate_embeddings(limit: usize) -> Result<usize, String> {
-    let articles = db::get_articles(None, limit, 0)
+    // 先获取已经有向量的文章 ID
+    let existing_vectors = db::get_vectors_by_statuses(&[
+        crate::config::status::UNREAD,
+        crate::config::status::CLICKED,
+        crate::config::status::LIKED,
+        crate::config::status::DISLIKED,
+        crate::config::status::MARKED_READ,
+    ]).map_err(|e| format!("获取向量数据失败: {}", e))?;
+    
+    let has_vector_ids: std::collections::HashSet<String> = existing_vectors
+        .into_iter()
+        .map(|v| v.id)
+        .collect();
+    
+    // 获取所有文章，过滤掉已有向量的
+    let all_articles = db::get_articles(None, limit, 0)
         .map_err(|e| format!("获取文章失败: {}", e))?;
+    
+    let articles: Vec<_> = all_articles
+        .into_iter()
+        .filter(|a| !has_vector_ids.contains(&a.id))
+        .collect();
+    
+    tracing::info!("需要生成向量的文章数量: {}", articles.len());
     
     let client = embedding::EmbeddingClient::new();
     
@@ -62,9 +88,14 @@ pub async fn generate_embeddings(limit: usize) -> Result<usize, String> {
         };
         
         match client.embed(&text).await {
-            Ok(_vector) => {
-                tracing::info!("已为文章 {} 生成向量", article.id);
-                count += 1;
+            Ok(vector) => {
+                // 保存向量到数据库
+                if let Err(e) = db::save_article_vector(&article.id, &vector) {
+                    tracing::error!("保存向量失败 {}: {}", article.id, e);
+                } else {
+                    tracing::info!("✅ 已为文章 {} 生成并保存向量", article.id);
+                    count += 1;
+                }
             }
             Err(e) => {
                 tracing::error!("生成向量失败 {}: {}", article.id, e);
@@ -84,6 +115,17 @@ pub fn get_articles(
 ) -> Result<Vec<db::Article>, String> {
     db::get_articles(status, limit, offset)
         .map_err(|e| format!("获取失败: {}", e))
+}
+
+/// 获取推荐文章列表（按照 70% 分数排序 + 30% 随机多样性的逻辑）
+#[tauri::command]
+pub fn get_recommended_articles() -> Result<Vec<db::Article>, String> {
+    let settings = settings::get_settings().unwrap_or_default();
+    let daily_papers = settings.daily_papers;
+    let diversity_ratio = settings.diversity_ratio;
+    
+    db::get_recommended_articles(daily_papers, diversity_ratio)
+        .map_err(|e| format!("获取推荐失败: {}", e))
 }
 
 /// 更新文章状态

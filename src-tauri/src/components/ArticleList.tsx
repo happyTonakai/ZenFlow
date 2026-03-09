@@ -33,15 +33,25 @@ export function ArticleList({ articles, loading, error, onStatusChange, currentT
     );
   }
 
+  // 找到随机多样性部分开始的位置
+  const diversityIndex = articles.findIndex(a => a.recommendationType === 'diversity');
+
   return (
     <div className="article-list">
-      {articles.map(article => (
-        <ArticleCard 
-          key={article.id} 
-          article={article}
-          onStatusChange={onStatusChange}
-          currentTab={currentTab}
-        />
+      {articles.map((article, index) => (
+        <>
+          {index === diversityIndex && diversityIndex > 0 && (
+            <div className="recommendation-divider" key="divider">
+              <span>—— 为你推荐的随机多样性文章 ——</span>
+            </div>
+          )}
+          <ArticleCard 
+            key={article.id} 
+            article={article}
+            onStatusChange={onStatusChange}
+            currentTab={currentTab}
+          />
+        </>
       ))}
     </div>
   );

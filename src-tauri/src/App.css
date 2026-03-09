@@ -4,7 +4,15 @@
   box-sizing: border-box;
 }
 
+html {
+  /* 防止 macOS 橡皮筋回弹效果露出底部的白色背景 */
+  background-color: #0a0a14 !important;
+}
+
 :root {
+  /* 让 macOS 意识到这是一个深色窗口，从而将原生滚动条切换为深色模式 */
+  color-scheme: dark;
+
   --bg-primary: #0f0f1a;
   --bg-secondary: #1a1a2e;
   --bg-tertiary: #2a2a4e;
@@ -176,4 +184,28 @@ body {
 .article-list {
   display: flex;
   flex-direction: column;
+}
+
+/* Recommendation Divider */
+.recommendation-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 0;
+  margin: 0.5rem 0;
+}
+
+.recommendation-divider::before,
+.recommendation-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.recommendation-divider span {
+  padding: 0 1rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
 }

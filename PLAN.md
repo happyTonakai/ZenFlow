@@ -211,7 +211,7 @@ ZenFlow/
 | `negative_alpha` | 1.5 | 负向惩罚系数 |
 | `diversity_ratio` | 0.3 | 随机探索比例 |
 | `enable_translation` | true | 是否启用翻译 |
-| `translation_model` | `Qwen2.5-7B` | 翻译模型 |
+| `translation_model` | `Qwen3.5-4B` | 翻译模型 |
 
 ---
 

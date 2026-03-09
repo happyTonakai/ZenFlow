@@ -18,6 +18,8 @@ pub struct FetchedArticle {
     pub abstract_text: Option<String>,
     pub source: String,
     pub published: Option<DateTime<Utc>>,
+    pub author: Option<String>,
+    pub category: Option<String>,
 }
 
 /// RSS 抓取器
@@ -122,7 +124,25 @@ fn parse_arxiv_rss(content: &str) -> Result<Vec<FetchedArticle>> {
                 continue;
             }
         }
-        
+
+        // 解析作者 (dc:creator)
+        let author = extract_xml_content(item, "dc:creator");
+        let author = if author.is_empty() { None } else { Some(author) };
+
+        // 解析分类 (所有 category 标签)
+        let categories: Vec<&str> = item
+            .split("<category>")
+            .skip(1)
+            .filter_map(|s| s.split("</category>").next())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let category = if categories.is_empty() {
+            None
+        } else {
+            Some(categories.join(", "))
+        };
+
         articles.push(FetchedArticle {
             id,
             title: title.trim().to_string(),
@@ -130,6 +150,8 @@ fn parse_arxiv_rss(content: &str) -> Result<Vec<FetchedArticle>> {
             abstract_text,
             source: "arxiv".to_string(),
             published: None,
+            author,
+            category,
         });
     }
     
@@ -172,6 +194,53 @@ fn extract_arxiv_id(link: &str) -> Option<String> {
         return Some(id.to_string());
     }
     None
+}
+
+/// 提取嵌套 XML 标签内容 (如 <author><name>xxx</name></author>)
+fn extract_nested_xml_content(content: &str, outer: &str, inner: &str) -> String {
+    let open_outer = format!("<{}>", outer);
+    let close_outer = format!("</{}>", outer);
+    let open_inner = format!("<{}>", inner);
+    let close_inner = format!("</{}>", inner);
+
+    if let Some(start) = content.find(&open_outer) {
+        let rest = &content[start + open_outer.len()..];
+        if let Some(end) = rest.find(&close_outer) {
+            let outer_content = &rest[..end];
+            if let Some(start) = outer_content.find(&open_inner) {
+                let inner_rest = &outer_content[start + open_inner.len()..];
+                if let Some(end) = inner_rest.find(&close_inner) {
+                    return inner_rest[..end].trim().to_string();
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+/// 提取 arXiv 主分类
+fn extract_arxiv_primary_category(content: &str) -> String {
+    // 优先获取 arxiv:primary_category
+    if let Some(start) = content.find("<arxiv:primary_category") {
+        let rest = &content[start..];
+        if let Some(term_start) = rest.find("term=\"") {
+            let term_rest = &rest[term_start + 6..];
+            if let Some(term_end) = term_rest.find('"') {
+                return term_rest[..term_end].to_string();
+            }
+        }
+    }
+    // 其次获取第一个 category
+    if let Some(start) = content.find("<category") {
+        let rest = &content[start..];
+        if let Some(term_start) = rest.find("term=\"") {
+            let term_rest = &rest[term_start + 6..];
+            if let Some(term_end) = term_rest.find('"') {
+                return term_rest[..term_end].to_string();
+            }
+        }
+    }
+    String::new()
 }
 
 /// 通过 arXiv ID 获取文章详情
@@ -219,7 +288,15 @@ pub async fn fetch_arxiv_by_ids(ids: &[String]) -> Result<Vec<FetchedArticle>> {
         if id.is_empty() || title.is_empty() {
             continue;
         }
-        
+
+        // 解析作者 (author > name)
+        let author = extract_nested_xml_content(entry, "author", "name");
+        let author = if author.is_empty() { None } else { Some(author) };
+
+        // 解析分类 (arxiv:arxiv:primary_category 或 category term)
+        let category = extract_arxiv_primary_category(entry);
+        let category = if category.is_empty() { None } else { Some(category) };
+
         articles.push(FetchedArticle {
             id,
             title: title.trim().replace('\n', " "),
@@ -227,6 +304,8 @@ pub async fn fetch_arxiv_by_ids(ids: &[String]) -> Result<Vec<FetchedArticle>> {
             abstract_text: Some(summary.chars().take(config::ABSTRACT_MAX_LENGTH).collect()),
             source: "arxiv".to_string(),
             published: None,
+            author,
+            category,
         });
     }
     

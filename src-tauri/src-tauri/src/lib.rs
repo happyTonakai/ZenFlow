@@ -35,6 +35,7 @@ pub fn run() {
             commands::fetch_articles,
             commands::generate_embeddings,
             commands::get_articles,
+            commands::get_recommended_articles,
             commands::update_status,
             commands::mark_all_read,
             // 推荐系统
@@ -51,6 +52,8 @@ pub fn run() {
             commands::initialize_app,
             commands::get_arxiv_categories,
             commands::translate_text,
+            commands::translate_batch,
+            commands::request_keychain_access,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

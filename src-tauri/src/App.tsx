@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { ArticleList } from "./components/ArticleList";
 import { WelcomeWizard } from "./components/WelcomeWizard";
+import { SettingsModal } from "./components/SettingsModal";
 import { 
   useArticles, 
   useStats, 
@@ -19,14 +20,22 @@ function App() {
   const [filter, setFilter] = useState<FilterType>('unread');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [fetching, setFetching] = useState(false);
 
   const statusFilter = filter === 'unread' ? ArticleStatus.UNREAD 
     : filter === 'liked' ? ArticleStatus.LIKED 
     : null;
 
-  const { articles, loading, error, updateArticleStatusLocal, refetch: refetchArticles } = useArticles(statusFilter);
+  const { articles, loading, error, updateArticleStatusLocal, refetch: refetchArticles, fetchRecommendedArticles } = useArticles(statusFilter);
   const { stats, refetch: refetchStats } = useStats();
+
+  // 获取推荐文章（当 filter 为 unread 时）
+  useEffect(() => {
+    if (filter === 'unread') {
+      fetchRecommendedArticles();
+    }
+  }, [filter, fetchRecommendedArticles]);
 
   // Check initialization status on mount
   useEffect(() => {
@@ -48,6 +57,19 @@ function App() {
     refetchArticles();
     refetchStats();
   };
+
+  // Listen for keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+, on Mac or Ctrl+, on Windows/Linux
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault();
+        setShowSettings(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // 处理文章状态变化（就地更新）
   const handleStatusChange = (articleId: string, newStatus: number) => {
@@ -103,9 +125,22 @@ function App() {
   return (
     <div className="app">
       {/* Header */}
-      <header className="header">
-        <h1>ZenFlow</h1>
-        <p className="subtitle">AI Paper & News Recommendation</p>
+      <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1>ZenFlow</h1>
+          <p className="subtitle">AI Paper & News Recommendation</p>
+        </div>
+        <button 
+          className="settings-btn" 
+          onClick={() => setShowSettings(true)}
+          style={{ 
+            background: 'transparent', border: 'none', color: 'var(--text-secondary)',
+            fontSize: '1.5rem', cursor: 'pointer', padding: '0.5rem', borderRadius: '8px'
+          }}
+          title="设置 (Cmd+,)"
+        >
+          ⚙️
+        </button>
       </header>
 
       {/* Stats Bar */}
@@ -174,6 +209,17 @@ function App() {
           currentTab={statusFilter}
         />
       </main>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal 
+          onClose={() => setShowSettings(false)} 
+          onSave={() => {
+            // Apply new settings if needed, like fetching new recommendations based on changed alphas
+            refetchArticles();
+          }} 
+        />
+      )}
     </div>
   );
 }
