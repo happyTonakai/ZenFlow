@@ -7,7 +7,7 @@ interface SettingsModalProps {
   onSave?: () => void;
 }
 
-type TabKey = 'general' | 'embedding' | 'translation' | 'algorithm';
+type TabKey = 'general' | 'scoring' | 'translation' | 'algorithm';
 
 // Simple password input component
 function PasswordInput({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder?: string }) {
@@ -56,14 +56,10 @@ export function SettingsModal({ onClose, onSave }: SettingsModalProps) {
     try {
       setIsSaving(true);
       setError(null);
-      // Ensure keychain access if siliconflow key or embedding key changes
-      // In a real scenario we'd track if it changed, but it's safe to just request it
-      if (settings.embedding_api_key.length > 5) {
-        await requestKeychainAccess(settings.embedding_api_key);
-      } else if (settings.siliconflow_api_key.length > 5) { // Fallback to old field
-        await requestKeychainAccess(settings.siliconflow_api_key);
+      if (settings.scoring_api_key.length > 5) {
+        await requestKeychainAccess(settings.scoring_api_key);
       }
-      
+
       await saveSettings(settings);
       onSave?.();
       onClose();
@@ -100,23 +96,23 @@ export function SettingsModal({ onClose, onSave }: SettingsModalProps) {
     }}>
       <div className="settings-container">
         <div className="settings-header">
-          <h2>⚙️ 设置</h2>
-          <button className="close-btn" onClick={onClose}>×</button>
+          <h2>设置</h2>
+          <button className="close-btn" onClick={onClose}>x</button>
         </div>
 
         <div className="settings-body">
           <div className="settings-sidebar">
             <button className={`settings-tab ${activeTab === 'general' ? 'active' : ''}`} onClick={() => setActiveTab('general')}>
-              📋 基础设置
+              基础设置
             </button>
-            <button className={`settings-tab ${activeTab === 'embedding' ? 'active' : ''}`} onClick={() => setActiveTab('embedding')}>
-              🧠 嵌入 API
+            <button className={`settings-tab ${activeTab === 'scoring' ? 'active' : ''}`} onClick={() => setActiveTab('scoring')}>
+              推荐 API
             </button>
             <button className={`settings-tab ${activeTab === 'translation' ? 'active' : ''}`} onClick={() => setActiveTab('translation')}>
-              🌐 翻译 API
+              翻译 API
             </button>
             <button className={`settings-tab ${activeTab === 'algorithm' ? 'active' : ''}`} onClick={() => setActiveTab('algorithm')}>
-              🎛️ 推荐算法
+              推荐算法
             </button>
           </div>
 
@@ -126,19 +122,19 @@ export function SettingsModal({ onClose, onSave }: SettingsModalProps) {
             {activeTab === 'general' && (
               <div className="tab-pane">
                 <h3>基础设置</h3>
-                
+
                 <div className="settings-form-group">
                   <label>arXiv 订阅分类</label>
                   <div className="settings-categories">
                     {settings.arxiv_categories.map(cat => (
                       <span key={cat} className="settings-category-tag">
-                        {cat} <button onClick={() => removeCat(cat)}>×</button>
+                        {cat} <button onClick={() => removeCat(cat)}>x</button>
                       </span>
                     ))}
                   </div>
-                  <input 
-                    type="text" 
-                    className="settings-input" 
+                  <input
+                    type="text"
+                    className="settings-input"
                     placeholder="输入分类代码，按回车添加 (例如: CS.AI)"
                     value={catInput}
                     onChange={(e) => setCatInput(e.target.value)}
@@ -149,9 +145,9 @@ export function SettingsModal({ onClose, onSave }: SettingsModalProps) {
 
                 <div className="settings-form-group">
                   <label>每日论文获取数量</label>
-                  <input 
-                    type="number" 
-                    className="settings-input" 
+                  <input
+                    type="number"
+                    className="settings-input"
                     style={{ width: '150px' }}
                     min="1" max="100"
                     value={settings.daily_papers}
@@ -162,41 +158,38 @@ export function SettingsModal({ onClose, onSave }: SettingsModalProps) {
               </div>
             )}
 
-            {activeTab === 'embedding' && (
+            {activeTab === 'scoring' && (
               <div className="tab-pane">
-                <h3>嵌入 API</h3>
-                <p className="hint" style={{ marginBottom: '1.5rem' }}>用于将论文摘要转换为向量以计算相似度。推荐使用 SiliconFlow 提供的 BAAI/bge-m3 模型。</p>
-                
+                <h3>推荐 API</h3>
+                <p className="hint" style={{ marginBottom: '1.5rem' }}>用于论文评分和用户偏好分析的 LLM API（OpenAI 兼容格式）。</p>
+
                 <div className="settings-form-group">
                   <label>API Key</label>
-                  <PasswordInput 
-                    value={settings.embedding_api_key || settings.siliconflow_api_key} 
-                    onChange={(val) => setSettings({...settings, embedding_api_key: val})} 
-                    placeholder="sk-..." 
+                  <PasswordInput
+                    value={settings.scoring_api_key}
+                    onChange={(val) => setSettings({...settings, scoring_api_key: val})}
+                    placeholder="sk-..."
                   />
                 </div>
-                
+
                 <div className="settings-form-group">
                   <label>Base URL</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="settings-input"
-                    value={settings.embedding_api_base_url}
-                    onChange={(e) => setSettings({...settings, embedding_api_base_url: e.target.value})}
+                    value={settings.scoring_api_base_url}
+                    onChange={(e) => setSettings({...settings, scoring_api_base_url: e.target.value})}
                   />
                 </div>
 
                 <div className="settings-form-group">
                   <label>模型名称 (Model)</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="settings-input"
-                    value={settings.embedding_model}
-                    onChange={(e) => setSettings({...settings, embedding_model: e.target.value})}
+                    value={settings.scoring_model}
+                    onChange={(e) => setSettings({...settings, scoring_model: e.target.value})}
                   />
-                  <p className="hint" style={{ color: 'var(--accent)', marginTop: '0.5rem' }}>
-                    ⚠️ 注意：如果修改了此向量模型，数据库中以往保存的所有文章（包括偏好文章）都需要重新提取计算向量，这会有一次性的计算量并且可能产生兼容问题。
-                  </p>
                 </div>
               </div>
             )}
@@ -205,20 +198,20 @@ export function SettingsModal({ onClose, onSave }: SettingsModalProps) {
               <div className="tab-pane">
                 <h3>翻译 API</h3>
                 <p className="hint" style={{ marginBottom: '1.5rem' }}>用于将论文标题和摘要翻译为中文。如果留空，则不进行翻译。</p>
-                
+
                 <div className="settings-form-group">
                   <label>API Key</label>
-                  <PasswordInput 
-                    value={settings.translation_api_key} 
-                    onChange={(val) => setSettings({...settings, translation_api_key: val})} 
-                    placeholder="sk-..." 
+                  <PasswordInput
+                    value={settings.translation_api_key}
+                    onChange={(val) => setSettings({...settings, translation_api_key: val})}
+                    placeholder="sk-..."
                   />
                 </div>
-                
+
                 <div className="settings-form-group">
                   <label>Base URL</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="settings-input"
                     value={settings.translation_api_base_url}
                     onChange={(e) => setSettings({...settings, translation_api_base_url: e.target.value})}
@@ -227,8 +220,8 @@ export function SettingsModal({ onClose, onSave }: SettingsModalProps) {
 
                 <div className="settings-form-group">
                   <label>模型名称 (Model)</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="settings-input"
                     value={settings.translation_model}
                     onChange={(e) => setSettings({...settings, translation_model: e.target.value})}
@@ -241,51 +234,12 @@ export function SettingsModal({ onClose, onSave }: SettingsModalProps) {
               <div className="tab-pane">
                 <h3>推荐算法</h3>
                 <p className="hint" style={{ marginBottom: '1.5rem' }}>调整 ZenFlow 推荐结果的倾向性。</p>
-                
-                <div className="settings-param-grid">
-                  <div className="settings-param-cell">
-                    <label>正向聚类数</label>
-                    <input 
-                      type="number" 
-                      className="settings-input" 
-                      min="1" max="50"
-                      value={settings.pos_clusters}
-                      onChange={(e) => setSettings({...settings, pos_clusters: parseInt(e.target.value) || 5})}
-                    />
-                    <p className="hint" style={{ fontSize: '0.75rem', marginTop: '0.5rem' }}>大值表示兴趣更广</p>
-                  </div>
-                  <div className="settings-param-cell">
-                    <label>负向聚类数</label>
-                    <input 
-                      type="number" 
-                      className="settings-input" 
-                      min="1" max="50"
-                      value={settings.neg_clusters}
-                      onChange={(e) => setSettings({...settings, neg_clusters: parseInt(e.target.value) || 3})}
-                    />
-                    <p className="hint" style={{ fontSize: '0.75rem', marginTop: '0.5rem' }}>过滤负面内容</p>
-                  </div>
-                </div>
-
-                <div className="settings-form-group">
-                  <label>负向惩罚系数 (α)</label>
-                  <div className="settings-slider-row">
-                    <input 
-                      type="range" 
-                      min="0.5" max="3.0" step="0.1"
-                      value={settings.negative_alpha}
-                      onChange={(e) => setSettings({...settings, negative_alpha: parseFloat(e.target.value)})}
-                    />
-                    <span className="settings-slider-value">{settings.negative_alpha.toFixed(1)}</span>
-                  </div>
-                  <p className="hint">α 越大，推荐结果越倾向于避开你不喜欢的内容领域。</p>
-                </div>
 
                 <div className="settings-form-group">
                   <label>多样性比例</label>
                   <div className="settings-slider-row">
-                    <input 
-                      type="range" 
+                    <input
+                      type="range"
                       min="0" max="0.5" step="0.05"
                       value={settings.diversity_ratio}
                       onChange={(e) => setSettings({...settings, diversity_ratio: parseFloat(e.target.value)})}

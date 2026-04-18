@@ -1,7 +1,5 @@
-//! 算法模块
+//! 算法模块 - LLM 驱动的推荐
 
 mod score;
-mod cluster;
 
-pub use score::{compute_score, compute_score_with_alpha};
-pub use cluster::{update_clusters, recalculate_all_scores, ClusterResult};
+pub use score::{score_all_unread_articles, update_user_preferences};

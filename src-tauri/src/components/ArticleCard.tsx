@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Article, ArticleStatus } from '../types/article';
-import { updateArticleStatus } from '../hooks/useArticles';
+import { updateArticleStatus, addComment } from '../hooks/useArticles';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -81,6 +82,22 @@ function formatAuthors(author: string | null): string {
 }
 
 export function ArticleCard({ article, onStatusChange, currentTab: _currentTab }: ArticleCardProps) {
+  const [showComment, setShowComment] = useState(false);
+  const [commentText, setCommentText] = useState(article.comment || '');
+  const [savingComment, setSavingComment] = useState(false);
+
+  const handleSaveComment = async () => {
+    setSavingComment(true);
+    try {
+      await addComment(article.id, commentText);
+      setShowComment(false);
+    } catch (e) {
+      console.error('Failed to save comment:', e);
+    } finally {
+      setSavingComment(false);
+    }
+  };
+
   // 处理点赞/点踩/跳过
   const handleStatus = async (newStatus: number) => {
     try {
@@ -205,15 +222,52 @@ export function ArticleCard({ article, onStatusChange, currentTab: _currentTab }
           >
             👎
           </button>
-          <button 
+          <button
             className={`btn-skip ${article.status === ArticleStatus.MARKED_READ ? 'active' : ''}`}
             onClick={() => handleStatus(ArticleStatus.MARKED_READ)}
             title="跳过（不参与推荐）"
           >
             →
           </button>
+          <button
+            className={`btn-comment ${article.comment ? 'has-comment' : ''}`}
+            onClick={() => setShowComment(!showComment)}
+            title={article.comment ? '编辑评论' : '添加评论'}
+          >
+            💬
+          </button>
         </div>
       </div>
+
+      {showComment && (
+        <div className="comment-section">
+          <textarea
+            className="comment-input"
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            placeholder="写下你对这篇文章的看法，帮助 AI 更好地理解你的偏好..."
+            rows={2}
+          />
+          <div className="comment-actions">
+            <button
+              className="btn-comment-save"
+              onClick={handleSaveComment}
+              disabled={savingComment}
+            >
+              {savingComment ? '保存中...' : '保存'}
+            </button>
+            <button
+              className="btn-comment-cancel"
+              onClick={() => {
+                setShowComment(false);
+                setCommentText(article.comment || '');
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,26 +4,23 @@ use std::env;
 
 use crate::settings;
 
-// === API 配置 ===
+// === 评分 API 配置 ===
 
-/// 获取 SiliconFlow API Key（环境变量）
-pub fn siliconflow_api_key() -> Option<String> {
-    env::var("SILICONFLOW_API_KEY").ok()
-}
-
-/// 获取嵌入向量 API Base URL（从设置中读取）
-pub fn embedding_api_base_url() -> String {
+/// 获取评分 API Base URL（从设置中读取）
+pub fn scoring_api_base_url() -> String {
     settings::get_settings()
-        .map(|s| s.embedding_api_base_url)
-        .unwrap_or_else(|_| "https://api.siliconflow.cn/v1".to_string())
+        .map(|s| s.scoring_api_base_url)
+        .unwrap_or_else(|_| "https://api.openai.com/v1".to_string())
 }
 
-/// 获取嵌入向量模型（从设置中读取）
-pub fn embedding_model() -> String {
+/// 获取评分模型（从设置中读取）
+pub fn scoring_model() -> String {
     settings::get_settings()
-        .map(|s| s.embedding_model)
-        .unwrap_or_else(|_| "BAAI/bge-m3".to_string())
+        .map(|s| s.scoring_model)
+        .unwrap_or_else(|_| "gpt-4o-mini".to_string())
 }
+
+// === 翻译 API 配置 ===
 
 /// 获取翻译 API Base URL（从设置中读取）
 pub fn translation_api_base_url() -> String {
@@ -56,25 +53,17 @@ pub fn rss_feeds() -> Vec<String> {
         .collect()
 }
 
-// === 聚类配置 ===
-pub const MAX_CLUSTERS: usize = 100;
-pub const CLUSTER_TRIGGER_THRESHOLD: usize = 5;
+// === 推荐配置 ===
 pub const DIVERSITY_RATIO: f32 = 0.3;
-
-// === 负向惩罚系数 (α > 1 时对不感兴趣的内容更敏感) ===
-pub const NEGATIVE_PENALTY_ALPHA: f32 = 1.5;
-
-// === 反馈权重 ===
-pub const WEIGHT_LIKED: f32 = 2.0;   // 点赞权重
-pub const WEIGHT_CLICKED: f32 = 1.0; // 点击权重
+pub const SCORING_BATCH_SIZE: usize = 20;
 
 // === 文章状态 ===
 pub mod status {
     pub const UNREAD: i32 = 0;
-    pub const CLICKED: i32 = 1;      // 已点击（真正阅读）- 参与正向聚类
-    pub const LIKED: i32 = 2;        // 已点赞 - 参与正向聚类，权重更高
-    pub const MARKED_READ: i32 = 3;  // 批量标记已读 - 不参与聚类
-    pub const DISLIKED: i32 = -1;    // 不喜欢 - 参与负向聚类
+    pub const CLICKED: i32 = 1;      // 已点击（真正阅读）
+    pub const LIKED: i32 = 2;        // 已点赞
+    pub const MARKED_READ: i32 = 3;  // 批量标记已读
+    pub const DISLIKED: i32 = -1;    // 不喜欢
 }
 
 // === 数据库配置 ===
@@ -85,5 +74,4 @@ pub fn db_path() -> String {
 
 // === 其他配置 ===
 pub const ABSTRACT_MAX_LENGTH: usize = 2000;
-pub const EMBEDDING_TEXT_MAX_LENGTH: usize = 8000;
 pub const CLEAN_OLD_ARTICLES_DAYS: i32 = 30;

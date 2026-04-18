@@ -3,7 +3,7 @@
 pub mod config;
 pub mod db;
 pub mod feed;
-pub mod embedding;
+pub mod llm;
 pub mod algorithm;
 pub mod commands;
 pub mod settings;
@@ -17,29 +17,30 @@ pub fn run() {
                 .add_directive(tracing::Level::INFO.into())
         )
         .init();
-    
+
     // 初始化数据库
     match db::init_db() {
-        Ok(_) => tracing::info!("✅ 数据库初始化成功"),
+        Ok(_) => tracing::info!("数据库初始化成功"),
         Err(e) => {
-            tracing::error!("❌ 数据库初始化失败: {}", e);
+            tracing::error!("数据库初始化失败: {}", e);
             std::process::exit(1);
         }
     }
-    
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             // 文章操作
             commands::fetch_articles,
-            commands::generate_embeddings,
             commands::get_articles,
             commands::get_recommended_articles,
             commands::update_status,
+            commands::add_comment,
             commands::mark_all_read,
             // 推荐系统
             commands::refresh_recommendations,
+            commands::update_preferences,
             commands::is_initialized,
             commands::get_stats,
             commands::clean_old_articles,

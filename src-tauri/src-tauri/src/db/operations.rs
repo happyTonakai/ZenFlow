@@ -1,7 +1,6 @@
 //! 数据库 CRUD 操作
 
 use anyhow::Result;
-use ndarray::Array1;
 use rand::seq::IteratorRandom;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -27,6 +26,7 @@ pub struct Article {
     pub hf_upvotes: Option<i32>,
     pub ax_upvotes: Option<i32>,
     pub ax_downvotes: Option<i32>,
+    pub comment: Option<String>,
     pub timestamp: Option<String>,
     #[serde(rename = "recommendationType")]
     pub recommendation_type: Option<String>,
@@ -40,54 +40,26 @@ pub struct NewArticle {
     pub link: String,
     pub abstract_text: Option<String>,
     pub source: String,
-    pub vector: Option<Vec<f32>>,
     pub translated_title: Option<String>,
     pub translated_abstract: Option<String>,
     pub author: Option<String>,
     pub category: Option<String>,
 }
 
-/// 向量数据（用于聚类）
-pub struct VectorData {
-    pub id: String,
-    pub vector: Vec<f32>,
-    pub status: i32,
-}
-
-fn vector_to_blob(v: &[f32]) -> Vec<u8> {
-    unsafe {
-        std::slice::from_raw_parts(
-            v.as_ptr() as *const u8,
-            v.len() * std::mem::size_of::<f32>(),
-        )
-        .to_vec()
-    }
-}
-
-fn blob_to_vector(blob: &[u8]) -> Vec<f32> {
-    let len = blob.len() / std::mem::size_of::<f32>();
-    unsafe {
-        let ptr = blob.as_ptr() as *const f32;
-        std::slice::from_raw_parts(ptr, len).to_vec()
-    }
-}
-
 /// 保存文章
 pub fn save_article(article: &NewArticle) -> Result<()> {
     let conn = get_db()?;
-    let vector_blob = article.vector.as_ref().map(|v| vector_to_blob(v));
 
     conn.execute(
-        "INSERT OR IGNORE INTO articles 
-         (id, title, link, abstract, source, vector, status, score, translated_title, translated_abstract, author, category)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, 0.0, ?7, ?8, ?9, ?10)",
+        "INSERT OR IGNORE INTO articles
+         (id, title, link, abstract, source, status, score, translated_title, translated_abstract, author, category)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, 0.0, ?6, ?7, ?8, ?9)",
         params![
             article.id,
             article.title,
             article.link,
             article.abstract_text,
             article.source,
-            vector_blob,
             article.translated_title,
             article.translated_abstract,
             article.author,
@@ -104,19 +76,16 @@ pub fn save_articles(articles: &[NewArticle]) -> Result<usize> {
     let mut count = 0;
 
     for article in articles {
-        let vector_blob = article.vector.as_ref().map(|v| vector_to_blob(v));
-
         let result = conn.execute(
-            "INSERT OR IGNORE INTO articles 
-             (id, title, link, abstract, source, vector, status, score, translated_title, translated_abstract, author, category)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, 0.0, ?7, ?8, ?9, ?10)",
+            "INSERT OR IGNORE INTO articles
+             (id, title, link, abstract, source, status, score, translated_title, translated_abstract, author, category)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, 0.0, ?6, ?7, ?8, ?9)",
             params![
                 article.id,
                 article.title,
                 article.link,
                 article.abstract_text,
                 article.source,
-                vector_blob,
                 article.translated_title,
                 article.translated_abstract,
                 article.author,
@@ -152,66 +121,54 @@ pub fn mark_all_unread_as_read() -> Result<usize> {
     Ok(rows)
 }
 
+fn map_article_row(row: &rusqlite::Row) -> rusqlite::Result<Article> {
+    Ok(Article {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        link: row.get(2)?,
+        abstract_text: row.get(3)?,
+        source: row.get(4)?,
+        status: row.get(5)?,
+        score: row.get(6)?,
+        translated_title: row.get(7)?,
+        translated_abstract: row.get(8)?,
+        author: row.get(9)?,
+        category: row.get(10)?,
+        hf_upvotes: row.get(11)?,
+        ax_upvotes: row.get(12)?,
+        ax_downvotes: row.get(13)?,
+        comment: row.get(14)?,
+        timestamp: row.get(15)?,
+        recommendation_type: None,
+    })
+}
+
+const ARTICLE_COLUMNS: &str = "id, title, link, abstract, source, status, score,
+    translated_title, translated_abstract, author, category, hf_upvotes, ax_upvotes, ax_downvotes, comment, timestamp";
+
 /// 获取文章列表
 pub fn get_articles(status: Option<i32>, limit: usize, offset: usize) -> Result<Vec<Article>> {
     let conn = get_db()?;
 
     let sql = match status {
-        Some(_) => "SELECT id, title, link, abstract, source, status, score, 
-                           translated_title, translated_abstract, author, category, hf_upvotes, ax_upvotes, ax_downvotes, timestamp
-                    FROM articles WHERE status = ?1 
-                    ORDER BY score DESC LIMIT ?2 OFFSET ?3",
-        None => "SELECT id, title, link, abstract, source, status, score, 
-                        translated_title, translated_abstract, author, category, hf_upvotes, ax_upvotes, ax_downvotes, timestamp
-                 FROM articles ORDER BY score DESC LIMIT ?1 OFFSET ?2",
+        Some(_) => format!(
+            "SELECT {} FROM articles WHERE status = ?1 ORDER BY score DESC LIMIT ?2 OFFSET ?3",
+            ARTICLE_COLUMNS
+        ),
+        None => format!(
+            "SELECT {} FROM articles ORDER BY score DESC LIMIT ?1 OFFSET ?2",
+            ARTICLE_COLUMNS
+        ),
     };
 
-    let mut stmt = conn.prepare(sql)?;
+    let mut stmt = conn.prepare(&sql)?;
 
     let articles = match status {
         Some(s) => stmt
-            .query_map(params![s, limit as i32, offset as i32], |row| {
-                Ok(Article {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    link: row.get(2)?,
-                    abstract_text: row.get(3)?,
-                    source: row.get(4)?,
-                    status: row.get(5)?,
-                    score: row.get(6)?,
-                    translated_title: row.get(7)?,
-                    translated_abstract: row.get(8)?,
-                    author: row.get(9)?,
-                    category: row.get(10)?,
-                    hf_upvotes: row.get(11)?,
-                    ax_upvotes: row.get(12)?,
-                    ax_downvotes: row.get(13)?,
-                    timestamp: row.get(14)?,
-                    recommendation_type: None,
-                })
-            })?
+            .query_map(params![s, limit as i32, offset as i32], map_article_row)?
             .collect::<Result<Vec<_>, _>>()?,
         None => stmt
-            .query_map(params![limit as i32, offset as i32], |row| {
-                Ok(Article {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    link: row.get(2)?,
-                    abstract_text: row.get(3)?,
-                    source: row.get(4)?,
-                    status: row.get(5)?,
-                    score: row.get(6)?,
-                    translated_title: row.get(7)?,
-                    translated_abstract: row.get(8)?,
-                    author: row.get(9)?,
-                    category: row.get(10)?,
-                    hf_upvotes: row.get(11)?,
-                    ax_upvotes: row.get(12)?,
-                    ax_downvotes: row.get(13)?,
-                    timestamp: row.get(14)?,
-                    recommendation_type: None,
-                })
-            })?
+            .query_map(params![limit as i32, offset as i32], map_article_row)?
             .collect::<Result<Vec<_>, _>>()?,
     };
 
@@ -282,36 +239,6 @@ pub fn get_recommended_articles(daily_papers: usize, diversity_ratio: f32) -> Re
     Ok(result)
 }
 
-/// 获取文章向量（用于聚类）
-pub fn get_vectors_by_statuses(statuses: &[i32]) -> Result<Vec<VectorData>> {
-    let conn = get_db()?;
-
-    let placeholders: Vec<String> = statuses.iter().map(|_| "?".to_string()).collect();
-    let sql = format!(
-        "SELECT id, vector, status FROM articles WHERE status IN ({}) AND vector IS NOT NULL",
-        placeholders.join(",")
-    );
-
-    let params: Vec<&dyn rusqlite::ToSql> =
-        statuses.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-
-    let mut stmt = conn.prepare(&sql)?;
-    let vectors = stmt
-        .query_map(params.as_slice(), |row| {
-            let id: String = row.get(0)?;
-            let vector_blob: Vec<u8> = row.get(1)?;
-            let status: i32 = row.get(2)?;
-            Ok(VectorData {
-                id,
-                vector: blob_to_vector(&vector_blob),
-                status,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(vectors)
-}
-
 /// 更新文章分数
 pub fn update_article_score(article_id: &str, score: f32) -> Result<()> {
     let conn = get_db()?;
@@ -338,41 +265,57 @@ pub fn update_articles_scores(scores: &[(String, f32)]) -> Result<()> {
     Ok(())
 }
 
-/// 保存聚类中心
-pub fn save_clusters(cluster_type: &str, centroids: &[Array1<f32>]) -> Result<()> {
-    let mut conn = get_db()?;
-    let tx = conn.transaction()?;
-
-    tx.execute(
-        "DELETE FROM clusters WHERE type = ?1",
-        params![cluster_type],
-    )?;
-
-    for centroid in centroids {
-        let bytes = vector_to_blob(centroid.as_slice().unwrap());
-        tx.execute(
-            "INSERT INTO clusters (type, centroid) VALUES (?1, ?2)",
-            params![cluster_type, bytes],
-        )?;
-    }
-
-    tx.commit()?;
-    Ok(())
+/// 反馈文章数据
+pub struct FeedbackArticleRow {
+    pub id: String,
+    pub title: String,
+    pub abstract_text: Option<String>,
+    pub status: i32,
+    pub comment: Option<String>,
 }
 
-/// 加载聚类中心
-pub fn load_clusters(cluster_type: &str) -> Result<Vec<Array1<f32>>> {
+/// 获取最近有反馈的文章（用于偏好更新）
+pub fn get_recent_feedback_articles(since_days: i32) -> Result<Vec<FeedbackArticleRow>> {
     let conn = get_db()?;
+    let mut stmt = conn.prepare(
+        "SELECT id, title, abstract, status, comment FROM articles
+         WHERE status IN (?1, ?2, ?3)
+         AND timestamp >= datetime('now', ?4)
+         ORDER BY timestamp DESC",
+    )?;
 
-    let mut stmt = conn.prepare("SELECT centroid FROM clusters WHERE type = ?1")?;
-    let centroids = stmt
-        .query_map(params![cluster_type], |row| {
-            let blob: Vec<u8> = row.get(0)?;
-            Ok(Array1::from_vec(blob_to_vector(&blob)))
-        })?
+    let articles = stmt
+        .query_map(
+            params![
+                config::status::CLICKED,
+                config::status::LIKED,
+                config::status::DISLIKED,
+                format!("-{} days", since_days),
+            ],
+            |row| {
+                Ok(FeedbackArticleRow {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    abstract_text: row.get(2)?,
+                    status: row.get(3)?,
+                    comment: row.get(4)?,
+                })
+            },
+        )?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(centroids)
+    Ok(articles)
+}
+
+/// 更新文章评论
+pub fn update_article_comment(article_id: &str, comment: &str) -> Result<()> {
+    let conn = get_db()?;
+    let comment_val = if comment.is_empty() { None } else { Some(comment) };
+    conn.execute(
+        "UPDATE articles SET comment = ?1 WHERE id = ?2",
+        params![comment_val, article_id],
+    )?;
+    Ok(())
 }
 
 /// 清理旧文章
@@ -410,10 +353,9 @@ pub fn get_liked_count() -> Result<i32> {
     Ok(count)
 }
 
-/// 检查是否已完成初始化（至少有 CLUSTER_TRIGGER_THRESHOLD 篇偏好文章）
+/// 检查是否已完成初始化（通过设置表判断）
 pub fn is_initialized() -> Result<bool> {
-    let count = get_liked_count()?;
-    Ok(count >= config::CLUSTER_TRIGGER_THRESHOLD as i32)
+    crate::settings::AppSettings::is_initialized().map_err(Into::into)
 }
 
 /// 检查文章是否已存在
@@ -499,26 +441,12 @@ pub fn get_all_settings() -> Result<std::collections::HashMap<String, String>> {
     Ok(settings)
 }
 
-/// 保存文章向量
-pub fn save_article_vector(article_id: &str, vector: &[f32]) -> Result<()> {
-    let conn = get_db()?;
-    let vector_blob = vector_to_blob(vector);
-
-    conn.execute(
-        "UPDATE articles SET vector = ?1 WHERE id = ?2",
-        params![vector_blob, article_id],
-    )?;
-
-    Ok(())
-}
-
 /// 清空所有数据（用于初始化）
 pub fn clear_all_data() -> Result<()> {
     let conn = get_db()?;
     conn.execute("DELETE FROM articles", [])?;
-    conn.execute("DELETE FROM clusters", [])?;
     conn.execute("DELETE FROM settings", [])?;
-    tracing::info!("🗑️ 已清空数据库所有表");
+    tracing::info!("已清空数据库所有表");
     Ok(())
 }
 

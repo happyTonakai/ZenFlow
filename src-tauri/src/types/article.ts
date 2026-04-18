@@ -26,6 +26,7 @@ export interface Article {
   timestamp: string | null;
   author: string | null;
   category: string | null;
+  comment: string | null;
   recommendationType?: 'score' | 'diversity';
 }
 
@@ -41,9 +42,6 @@ export interface Stats {
 
 // 刷新结果
 export interface RefreshResult {
-  pos_count: number;
-  neg_count: number;
-  pos_clusters: number;
-  neg_clusters: number;
+  preferences_updated: boolean;
   scores_updated: number;
 }

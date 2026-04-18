@@ -208,3 +208,83 @@
   color: var(--text-primary);
   box-shadow: 0 0 8px rgba(128, 128, 128, 0.4);
 }
+
+/* 评论按钮 */
+.btn-comment {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-comment:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.btn-comment.has-comment {
+  color: var(--accent);
+}
+
+/* 评论区域 */
+.comment-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bg-tertiary);
+}
+
+.comment-input {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.comment-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.comment-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.btn-comment-save {
+  padding: 4px 16px;
+  background: var(--accent);
+  color: var(--bg-primary);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-comment-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-comment-cancel {
+  padding: 4px 16px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-comment-cancel:hover {
+  background: var(--bg-tertiary);
+}

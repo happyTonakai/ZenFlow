@@ -4,7 +4,6 @@ use serde::Serialize;
 
 use crate::algorithm;
 use crate::db;
-use crate::embedding;
 use crate::feed;
 use crate::settings;
 
@@ -13,7 +12,7 @@ use crate::settings;
 pub async fn fetch_articles() -> Result<usize, String> {
     // 开发模式：从本地测试文件读取
     let test_file = std::path::Path::new("/Users/hanzerui/joyspace/ZenFlow/test_rss.xml");
-    
+
     let articles = if test_file.exists() {
         feed::FeedFetcher::fetch_from_local_file(test_file.to_str().unwrap())
             .map_err(|e| format!("读取本地文件失败: {}", e))?
@@ -24,7 +23,7 @@ pub async fn fetch_articles() -> Result<usize, String> {
         fetcher.fetch_all().await
             .map_err(|e| format!("抓取失败: {}", e))?
     };
-    
+
     // 转换为数据库格式并保存
     let new_articles: Vec<db::NewArticle> = articles
         .into_iter()
@@ -34,76 +33,15 @@ pub async fn fetch_articles() -> Result<usize, String> {
             link: a.link,
             abstract_text: a.abstract_text,
             source: a.source,
-            vector: None,
             translated_title: None,
             translated_abstract: None,
             author: a.author,
             category: a.category,
         })
         .collect();
-    
+
     db::save_articles(&new_articles)
         .map_err(|e| format!("保存失败: {}", e))
-}
-
-/// 为新文章生成向量（只处理还没有向量的文章）
-#[tauri::command]
-pub async fn generate_embeddings(limit: usize) -> Result<usize, String> {
-    // 先获取已经有向量的文章 ID
-    let existing_vectors = db::get_vectors_by_statuses(&[
-        crate::config::status::UNREAD,
-        crate::config::status::CLICKED,
-        crate::config::status::LIKED,
-        crate::config::status::DISLIKED,
-        crate::config::status::MARKED_READ,
-    ]).map_err(|e| format!("获取向量数据失败: {}", e))?;
-    
-    let has_vector_ids: std::collections::HashSet<String> = existing_vectors
-        .into_iter()
-        .map(|v| v.id)
-        .collect();
-    
-    // 获取所有文章，过滤掉已有向量的
-    let all_articles = db::get_articles(None, limit, 0)
-        .map_err(|e| format!("获取文章失败: {}", e))?;
-    
-    let articles: Vec<_> = all_articles
-        .into_iter()
-        .filter(|a| !has_vector_ids.contains(&a.id))
-        .collect();
-    
-    tracing::info!("需要生成向量的文章数量: {}", articles.len());
-    
-    let client = embedding::EmbeddingClient::new();
-    
-    if !client.is_available() {
-        return Err("SILICONFLOW_API_KEY 未设置".to_string());
-    }
-    
-    let mut count = 0;
-    for article in articles {
-        let text = match &article.abstract_text {
-            Some(a) => format!("{} {}", article.title, a),
-            None => article.title.clone(),
-        };
-        
-        match client.embed(&text).await {
-            Ok(vector) => {
-                // 保存向量到数据库
-                if let Err(e) = db::save_article_vector(&article.id, &vector) {
-                    tracing::error!("保存向量失败 {}: {}", article.id, e);
-                } else {
-                    tracing::info!("✅ 已为文章 {} 生成并保存向量", article.id);
-                    count += 1;
-                }
-            }
-            Err(e) => {
-                tracing::error!("生成向量失败 {}: {}", article.id, e);
-            }
-        }
-    }
-    
-    Ok(count)
 }
 
 /// 获取文章列表
@@ -123,7 +61,7 @@ pub fn get_recommended_articles() -> Result<Vec<db::Article>, String> {
     let settings = settings::get_settings().unwrap_or_default();
     let daily_papers = settings.daily_papers;
     let diversity_ratio = settings.diversity_ratio;
-    
+
     db::get_recommended_articles(daily_papers, diversity_ratio)
         .map_err(|e| format!("获取推荐失败: {}", e))
 }
@@ -133,17 +71,38 @@ pub fn get_recommended_articles() -> Result<Vec<db::Article>, String> {
 pub async fn update_status(article_id: String, status: i32) -> Result<(), String> {
     db::update_article_status(&article_id, status)
         .map_err(|e| format!("更新失败: {}", e))?;
-    
-    tracing::info!("📝 文章 {} 状态更新为 {}", article_id, status);
-    
-    // 如果有足够的反馈，触发聚类更新
+
+    tracing::info!("文章 {} 状态更新为 {}", article_id, status);
+
+    // 状态变更后，异步更新偏好（fire-and-forget）
     if let Ok(true) = db::is_initialized() {
-        tracing::info!("🎯 触发聚类更新...");
-        if let Err(e) = algorithm::update_clusters() {
-            tracing::error!("更新聚类失败: {}", e);
-        }
+        tokio::spawn(async {
+            if let Err(e) = algorithm::update_user_preferences().await {
+                tracing::error!("更新偏好失败: {}", e);
+            }
+        });
     }
-    
+
+    Ok(())
+}
+
+/// 为文章添加评论
+#[tauri::command]
+pub async fn add_comment(article_id: String, comment: String) -> Result<(), String> {
+    db::update_article_comment(&article_id, &comment)
+        .map_err(|e| format!("保存评论失败: {}", e))?;
+
+    tracing::info!("文章 {} 添加评论", article_id);
+
+    // 有评论意味着有更丰富的反馈，异步更新偏好
+    if let Ok(true) = db::is_initialized() {
+        tokio::spawn(async {
+            if let Err(e) = algorithm::update_user_preferences().await {
+                tracing::error!("更新偏好失败: {}", e);
+            }
+        });
+    }
+
     Ok(())
 }
 
@@ -154,32 +113,50 @@ pub fn mark_all_read() -> Result<usize, String> {
         .map_err(|e| format!("操作失败: {}", e))
 }
 
-/// 统计结果
+/// 刷新推荐结果
 #[derive(Serialize)]
 pub struct RefreshResult {
-    pub pos_count: usize,
-    pub neg_count: usize,
-    pub pos_clusters: usize,
-    pub neg_clusters: usize,
+    pub preferences_updated: bool,
     pub scores_updated: usize,
 }
 
-/// 更新聚类并重新计算分数
+/// 更新偏好并重新计算分数
 #[tauri::command]
 pub async fn refresh_recommendations() -> Result<RefreshResult, String> {
-    let cluster_result = algorithm::update_clusters()
-        .map_err(|e| format!("聚类更新失败: {}", e))?;
-    
-    let scores_updated = algorithm::recalculate_all_scores()
-        .map_err(|e| format!("分数计算失败: {}", e))?;
-    
-    Ok(RefreshResult {
-        pos_count: cluster_result.pos_count,
-        neg_count: cluster_result.neg_count,
-        pos_clusters: cluster_result.pos_centroids.len(),
-        neg_clusters: cluster_result.neg_centroids.len(),
-        scores_updated,
-    })
+    let mut result = RefreshResult {
+        preferences_updated: false,
+        scores_updated: 0,
+    };
+
+    // 更新用户偏好
+    match algorithm::update_user_preferences().await {
+        Ok(()) => {
+            result.preferences_updated = true;
+        }
+        Err(e) => {
+            tracing::warn!("偏好更新失败: {}", e);
+        }
+    }
+
+    // 重新评分
+    match algorithm::score_all_unread_articles().await {
+        Ok(count) => {
+            result.scores_updated = count;
+        }
+        Err(e) => {
+            return Err(format!("评分失败: {}", e));
+        }
+    }
+
+    Ok(result)
+}
+
+/// 手动触发偏好更新
+#[tauri::command]
+pub async fn update_preferences() -> Result<(), String> {
+    algorithm::update_user_preferences()
+        .await
+        .map_err(|e| format!("偏好更新失败: {}", e))
 }
 
 /// 统计数据
@@ -198,9 +175,9 @@ pub struct Stats {
 pub fn get_stats() -> Result<Stats, String> {
     let counts = db::get_article_count_by_status()
         .map_err(|e| format!("获取统计失败: {}", e))?;
-    
+
     let initialized = db::is_initialized().unwrap_or(false);
-    
+
     Ok(Stats {
         unread: counts.get(&0).copied().unwrap_or(0),
         clicked: counts.get(&1).copied().unwrap_or(0),

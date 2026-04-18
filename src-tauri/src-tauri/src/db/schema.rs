@@ -18,13 +18,8 @@ CREATE TABLE IF NOT EXISTS articles (
     ax_upvotes INTEGER,
     ax_downvotes INTEGER,
     votes_updated_at DATETIME,
+    comment TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS clusters (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL,
-    centroid BLOB
 );
 
 -- 用户设置表
@@ -37,5 +32,13 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_articles_score ON articles(score DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_timestamp ON articles(timestamp);
-CREATE INDEX IF NOT EXISTS idx_clusters_type ON clusters(type);
 "#;
+
+/// 迁移 SQL：清理旧表 + 添加新列
+pub const MIGRATION_SQL: &str = r#"
+DROP TABLE IF EXISTS clusters;
+DROP INDEX IF EXISTS idx_clusters_type;
+"#;
+
+/// 添加 comment 列（已有数据库兼容）
+pub const MIGRATION_ADD_COMMENT: &str = "ALTER TABLE articles ADD COLUMN comment TEXT;";
