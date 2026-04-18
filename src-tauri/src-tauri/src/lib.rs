@@ -7,6 +7,7 @@ pub mod llm;
 pub mod algorithm;
 pub mod commands;
 pub mod settings;
+pub mod extractor;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -30,6 +31,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             // 文章操作
             commands::fetch_articles,
@@ -55,6 +57,10 @@ pub fn run() {
             commands::translate_text,
             commands::translate_batch,
             commands::request_keychain_access,
+            // 论文提取
+            commands::extract_paper,
+            commands::extract_paper_to_clipboard,
+            commands::extract_paper_latex,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
