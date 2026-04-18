@@ -3,6 +3,7 @@
 use anyhow::Result;
 
 use super::client::LlmClient;
+use super::truncate_text;
 
 /// 单篇论文信息（用于评分）
 pub struct ArticleInfo {
@@ -52,8 +53,13 @@ pub async fn score_articles(
         .chat_completion(SCORING_SYSTEM_PROMPT, &user_content, 0.3, 4000)
         .await?;
 
+    Ok(parse_scoring_response(&response))
+}
+
+/// 解析 LLM 评分响应 JSON（纯函数，无副作用）
+pub fn parse_scoring_response(raw: &str) -> Vec<(String, f32)> {
     // 清理 markdown 代码块标记
-    let content = response
+    let content = raw
         .trim_start_matches("```json")
         .trim_start_matches("```")
         .trim_end_matches("```")
@@ -64,7 +70,7 @@ pub async fn score_articles(
         Ok(v) => v,
         Err(e) => {
             tracing::warn!("评分结果解析失败: {}, 原始内容: {}", e, content);
-            return Ok(Vec::new());
+            return Vec::new();
         }
     };
 
@@ -78,7 +84,7 @@ pub async fn score_articles(
         }
     }
 
-    Ok(scores)
+    scores
 }
 
 /// 分批评分（每批 batch_size 篇）
@@ -105,11 +111,107 @@ pub async fn score_articles_batched(
     Ok(all_scores)
 }
 
-fn truncate_text(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        text.to_string()
-    } else {
-        let truncated: String = text.chars().take(max_chars).collect();
-        format!("{}...", truncated)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_valid_json() {
+        let input = r#"[{"id": "2401.01234", "score": 0.85}, {"id": "2401.05678", "score": 0.42}]"#;
+        let scores = parse_scoring_response(input);
+        assert_eq!(scores.len(), 2);
+        assert_eq!(scores[0].0, "2401.01234");
+        assert!((scores[0].1 - 0.85).abs() < 0.01);
+        assert_eq!(scores[1].0, "2401.05678");
+        assert!((scores[1].1 - 0.42).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_markdown_fenced_json() {
+        let input = "```json\n[{\"id\": \"abc\", \"score\": 0.9}]\n```";
+        let scores = parse_scoring_response(input);
+        assert_eq!(scores.len(), 1);
+        assert_eq!(scores[0].0, "abc");
+    }
+
+    #[test]
+    fn test_parse_bare_fenced_json() {
+        let input = "```\n[{\"id\": \"abc\", \"score\": 0.5}]\n```";
+        let scores = parse_scoring_response(input);
+        assert_eq!(scores.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_malformed_json_returns_empty() {
+        let input = "this is not json at all";
+        let scores = parse_scoring_response(input);
+        assert!(scores.is_empty());
+    }
+
+    #[test]
+    fn test_parse_empty_input() {
+        let scores = parse_scoring_response("");
+        assert!(scores.is_empty());
+    }
+
+    #[test]
+    fn test_parse_empty_array() {
+        let scores = parse_scoring_response("[]");
+        assert!(scores.is_empty());
+    }
+
+    #[test]
+    fn test_parse_missing_id_field_skipped() {
+        let input = r#"[{"score": 0.5}, {"id": "good", "score": 0.8}]"#;
+        let scores = parse_scoring_response(input);
+        assert_eq!(scores.len(), 1);
+        assert_eq!(scores[0].0, "good");
+    }
+
+    #[test]
+    fn test_parse_missing_score_field_skipped() {
+        let input = r#"[{"id": "no_score"}, {"id": "has_score", "score": 0.7}]"#;
+        let scores = parse_scoring_response(input);
+        assert_eq!(scores.len(), 1);
+        assert_eq!(scores[0].0, "has_score");
+    }
+
+    #[test]
+    fn test_parse_score_clamped_to_range() {
+        let input = r#"[{"id": "high", "score": 1.5}, {"id": "low", "score": -0.3}]"#;
+        let scores = parse_scoring_response(input);
+        assert_eq!(scores.len(), 2);
+        assert!((scores[0].1 - 1.0).abs() < 0.01);
+        assert!((scores[1].1 - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_extra_fields_ignored() {
+        let input = r#"[{"id": "x", "score": 0.6, "reason": "interesting", "extra": 42}]"#;
+        let scores = parse_scoring_response(input);
+        assert_eq!(scores.len(), 1);
+        assert_eq!(scores[0].0, "x");
+    }
+
+    #[test]
+    fn test_truncate_text_short() {
+        assert_eq!(truncate_text("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_text_exact() {
+        assert_eq!(truncate_text("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_text_long() {
+        let result = truncate_text("hello world", 5);
+        assert_eq!(result, "hello...");
+    }
+
+    #[test]
+    fn test_truncate_text_unicode() {
+        let result = truncate_text("你好世界测试", 4);
+        assert_eq!(result, "你好世界...");
     }
 }

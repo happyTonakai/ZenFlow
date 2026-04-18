@@ -463,3 +463,204 @@ pub fn update_article_translation(
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    fn setup_db() {
+        INIT.call_once(|| {
+            super::super::pool::init_test_db().expect("Failed to init test DB");
+        });
+    }
+
+    fn make_article(id: &str, title: &str) -> NewArticle {
+        NewArticle {
+            id: id.to_string(),
+            title: title.to_string(),
+            link: format!("https://arxiv.org/abs/{}", id),
+            abstract_text: Some(format!("Abstract for {}", title)),
+            source: "arxiv".to_string(),
+            translated_title: None,
+            translated_abstract: None,
+            author: Some("Author A, Author B".to_string()),
+            category: Some("cs.AI".to_string()),
+        }
+    }
+
+    #[test]
+    fn test_save_and_get_articles() {
+        setup_db();
+        let articles = vec![
+            make_article("test.0001", "Test Paper 1"),
+            make_article("test.0002", "Test Paper 2"),
+        ];
+        let count = save_articles(&articles).unwrap();
+        assert_eq!(count, 2);
+
+        let fetched = get_articles(Some(config::status::UNREAD), 10, 0).unwrap();
+        assert!(fetched.len() >= 2);
+        let ids: Vec<&str> = fetched.iter().map(|a| a.id.as_str()).collect();
+        assert!(ids.contains(&"test.0001"));
+        assert!(ids.contains(&"test.0002"));
+    }
+
+    #[test]
+    fn test_save_duplicate_ignored() {
+        setup_db();
+        let article = make_article("test.dup", "Duplicate Paper");
+        save_articles(&[article.clone()]).unwrap();
+        let count = save_articles(&[article]).unwrap();
+        assert_eq!(count, 0); // INSERT OR IGNORE
+    }
+
+    #[test]
+    fn test_update_article_status() {
+        setup_db();
+        let article = make_article("test.status", "Status Paper");
+        save_articles(&[article]).unwrap();
+
+        update_article_status("test.status", config::status::LIKED).unwrap();
+
+        let fetched = get_articles(Some(config::status::LIKED), 10, 0).unwrap();
+        assert!(fetched.iter().any(|a| a.id == "test.status"));
+    }
+
+    #[test]
+    fn test_update_article_comment() {
+        setup_db();
+        let article = make_article("test.comment", "Comment Paper");
+        save_articles(&[article]).unwrap();
+
+        update_article_comment("test.comment", "Very interesting approach!").unwrap();
+
+        let fetched = get_articles(None, 100, 0).unwrap();
+        let found = fetched.iter().find(|a| a.id == "test.comment").unwrap();
+        assert_eq!(found.comment.as_deref(), Some("Very interesting approach!"));
+    }
+
+    #[test]
+    fn test_update_comment_empty_sets_null() {
+        setup_db();
+        let article = make_article("test.comment_null", "Null Comment");
+        save_articles(&[article]).unwrap();
+
+        update_article_comment("test.comment_null", "temp").unwrap();
+        update_article_comment("test.comment_null", "").unwrap();
+
+        let fetched = get_articles(None, 100, 0).unwrap();
+        let found = fetched.iter().find(|a| a.id == "test.comment_null").unwrap();
+        assert!(found.comment.is_none());
+    }
+
+    #[test]
+    fn test_update_articles_scores() {
+        setup_db();
+        let articles = vec![
+            make_article("test.score1", "Score Paper 1"),
+            make_article("test.score2", "Score Paper 2"),
+        ];
+        save_articles(&articles).unwrap();
+
+        let scores = vec![
+            ("test.score1".to_string(), 0.9f32),
+            ("test.score2".to_string(), 0.3f32),
+        ];
+        update_articles_scores(&scores).unwrap();
+
+        let fetched = get_articles(None, 100, 0).unwrap();
+        let s1 = fetched.iter().find(|a| a.id == "test.score1").unwrap();
+        let s2 = fetched.iter().find(|a| a.id == "test.score2").unwrap();
+        assert!((s1.score - 0.9).abs() < 0.01);
+        assert!((s2.score - 0.3).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_mark_all_unread_as_read() {
+        setup_db();
+        let articles = vec![
+            make_article("test.read1", "Read Paper 1"),
+            make_article("test.read2", "Read Paper 2"),
+        ];
+        save_articles(&articles).unwrap();
+        // One is liked, should not be affected
+        update_article_status("test.read2", config::status::LIKED).unwrap();
+
+        let marked = mark_all_unread_as_read().unwrap();
+        assert!(marked >= 1);
+
+        // read1 should be MARKED_READ, read2 should still be LIKED
+        let fetched = get_articles(None, 100, 0).unwrap();
+        let r1 = fetched.iter().find(|a| a.id == "test.read1").unwrap();
+        let r2 = fetched.iter().find(|a| a.id == "test.read2").unwrap();
+        assert_eq!(r1.status, config::status::MARKED_READ);
+        assert_eq!(r2.status, config::status::LIKED);
+    }
+
+    #[test]
+    fn test_get_article_count_by_status() {
+        setup_db();
+        let article = make_article("test.count", "Count Paper");
+        save_articles(&[article]).unwrap();
+        update_article_status("test.count", config::status::DISLIKED).unwrap();
+
+        let counts = get_article_count_by_status().unwrap();
+        assert!(counts.get(&config::status::DISLIKED).copied().unwrap_or(0) >= 1);
+    }
+
+    #[test]
+    fn test_get_recent_feedback_articles() {
+        setup_db();
+        let article = make_article("test.feedback", "Feedback Paper");
+        save_articles(&[article]).unwrap();
+        update_article_status("test.feedback", config::status::LIKED).unwrap();
+        update_article_comment("test.feedback", "Great paper on LLMs").unwrap();
+
+        let feedback = get_recent_feedback_articles(30).unwrap();
+        let found = feedback.iter().find(|a| a.id == "test.feedback");
+        assert!(found.is_some());
+        let f = found.unwrap();
+        assert_eq!(f.status, config::status::LIKED);
+        assert_eq!(f.comment.as_deref(), Some("Great paper on LLMs"));
+    }
+
+    #[test]
+    fn test_get_existing_article_ids() {
+        setup_db();
+        let article = make_article("test.exists", "Exists Paper");
+        save_articles(&[article]).unwrap();
+
+        let ids = vec!["test.exists".to_string(), "test.nonexistent".to_string()];
+        let existing = get_existing_article_ids(&ids).unwrap();
+        assert!(existing.contains("test.exists"));
+        assert!(!existing.contains("test.nonexistent"));
+    }
+
+    #[test]
+    fn test_settings_crud() {
+        setup_db();
+        set_setting("test_key", "test_value").unwrap();
+        let val = get_setting("test_key").unwrap();
+        assert_eq!(val, Some("test_value".to_string()));
+
+        let missing = get_setting("nonexistent_key").unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_update_article_translation() {
+        setup_db();
+        let article = make_article("test.trans", "Translation Paper");
+        save_articles(&[article]).unwrap();
+
+        update_article_translation("test.trans", "翻译标题", "翻译摘要").unwrap();
+
+        let fetched = get_articles(None, 100, 0).unwrap();
+        let found = fetched.iter().find(|a| a.id == "test.trans").unwrap();
+        assert_eq!(found.translated_title.as_deref(), Some("翻译标题"));
+        assert_eq!(found.translated_abstract.as_deref(), Some("翻译摘要"));
+    }
+}

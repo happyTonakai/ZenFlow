@@ -55,3 +55,23 @@ pub fn get_db() -> Result<DbConnection> {
         .get()
         .map_err(Into::into)
 }
+
+/// 创建内存数据库连接池（用于测试）
+#[cfg(test)]
+pub fn create_test_pool() -> Result<DbPool> {
+    let manager = SqliteConnectionManager::memory();
+    let pool = Pool::builder().max_size(1).build(manager)?;
+    let conn = pool.get()?;
+    conn.execute_batch(SCHEMA_SQL)?;
+    let _ = conn.execute_batch(MIGRATION_SQL);
+    let _ = conn.execute(MIGRATION_ADD_COMMENT, []);
+    Ok(pool)
+}
+
+/// 设置全局测试数据库池（仅首次调用生效）
+#[cfg(test)]
+pub fn init_test_db() -> Result<DbPool> {
+    let pool = create_test_pool()?;
+    let _ = DB_POOL.set(pool.clone());
+    Ok(pool)
+}

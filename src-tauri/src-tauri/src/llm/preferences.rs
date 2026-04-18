@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::path::PathBuf;
 
 use super::client::LlmClient;
+use super::truncate_text;
 
 /// 获取偏好文件路径 (~/.zenflow/preferences.md)
 pub fn preferences_path() -> PathBuf {
@@ -152,11 +153,3 @@ pub async fn generate_initial_preferences(
     Ok(response.trim().to_string())
 }
 
-fn truncate_text(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        text.to_string()
-    } else {
-        let truncated: String = text.chars().take(max_chars).collect();
-        format!("{}...", truncated)
-    }
-}
