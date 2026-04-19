@@ -72,6 +72,7 @@ const defaultSettings: AppSettings = {
 	translation_model: 'gpt-3.5-turbo',
 	daily_papers: 20,
 	diversity_ratio: 0.3,
+	auto_refresh_recommendations: false,
 };
 
 export function WelcomeWizard({ onComplete }: WelcomeWizardProps) {

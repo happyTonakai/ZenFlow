@@ -250,6 +250,7 @@ pub async fn initialize_app(app: AppHandle, request: InitSettingsRequest) -> Res
         translation_model: request.translation_model.clone(),
         daily_papers: request.daily_papers,
         diversity_ratio: request.diversity_ratio,
+        auto_refresh_recommendations: false,
     };
 
     if let Err(e) = settings::update_settings(&settings) {

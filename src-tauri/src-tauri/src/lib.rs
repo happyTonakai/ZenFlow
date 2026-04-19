@@ -8,6 +8,7 @@ pub mod algorithm;
 pub mod commands;
 pub mod settings;
 pub mod extractor;
+pub mod scheduler;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -61,7 +62,15 @@ pub fn run() {
             commands::extract_paper,
             commands::extract_paper_to_clipboard,
             commands::extract_paper_latex,
+            // 每日推荐
+            commands::get_recommendation_dates,
+            commands::get_articles_by_recommend_date,
+            commands::generate_daily_recommendations,
         ])
+        .setup(|_app| {
+            scheduler::start_scheduler();
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

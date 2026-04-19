@@ -35,6 +35,8 @@ pub struct AppSettings {
     pub daily_papers: usize,
     /// 多样性比例 (0-1)，即随机推荐占比
     pub diversity_ratio: f32,
+    /// 是否自动刷新推荐（每日 RSS 抓取后自动评分并生成推荐批次）
+    pub auto_refresh_recommendations: bool,
 }
 
 /// 从系统密钥链获取 API Key
@@ -73,6 +75,7 @@ impl Default for AppSettings {
             translation_model: "gpt-3.5-turbo".to_string(),
             daily_papers: 20,
             diversity_ratio: 0.3,
+            auto_refresh_recommendations: false,
         }
     }
 }
@@ -124,6 +127,10 @@ impl AppSettings {
             }
         }
 
+        if let Some(v) = settings_map.get("auto_refresh_recommendations") {
+            settings.auto_refresh_recommendations = v == "true";
+        }
+
         Ok(settings)
     }
 
@@ -146,6 +153,7 @@ impl AppSettings {
         // 推荐参数
         set_setting("daily_papers", &self.daily_papers.to_string())?;
         set_setting("diversity_ratio", &self.diversity_ratio.to_string())?;
+        set_setting("auto_refresh_recommendations", &self.auto_refresh_recommendations.to_string())?;
         Ok(())
     }
 

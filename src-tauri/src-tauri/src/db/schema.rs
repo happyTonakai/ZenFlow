@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS articles (
     ax_downvotes INTEGER,
     votes_updated_at DATETIME,
     comment TEXT,
+    recommend_date TEXT,
+    batch_order INTEGER,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -32,6 +34,7 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_articles_score ON articles(score DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_timestamp ON articles(timestamp);
+CREATE INDEX IF NOT EXISTS idx_articles_recommend_date ON articles(recommend_date);
 "#;
 
 /// 迁移 SQL：清理旧表 + 添加新列
@@ -42,3 +45,7 @@ DROP INDEX IF EXISTS idx_clusters_type;
 
 /// 添加 comment 列（已有数据库兼容）
 pub const MIGRATION_ADD_COMMENT: &str = "ALTER TABLE articles ADD COLUMN comment TEXT;";
+
+/// 添加 recommend_date 和 batch_order 列（已有数据库兼容）
+pub const MIGRATION_ADD_RECOMMEND_DATE: &str = "ALTER TABLE articles ADD COLUMN recommend_date TEXT;";
+pub const MIGRATION_ADD_BATCH_ORDER: &str = "ALTER TABLE articles ADD COLUMN batch_order INTEGER;";

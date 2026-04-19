@@ -155,6 +155,18 @@ export function SettingsModal({ onClose, onSave }: SettingsModalProps) {
                   />
                   <p className="hint">每天展示的最大论文数量（推荐 10-50）</p>
                 </div>
+
+                <div className="settings-form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={settings.auto_refresh_recommendations}
+                      onChange={(e) => setSettings({...settings, auto_refresh_recommendations: e.target.checked})}
+                    />
+                    自动刷新推荐
+                  </label>
+                  <p className="hint">开启后，应用启动时会自动抓取 RSS 并生成每日推荐（需要推荐 API 已配置）</p>
+                </div>
               </div>
             )}
 

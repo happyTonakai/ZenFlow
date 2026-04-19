@@ -1,20 +1,22 @@
 import { useState, useEffect } from "react";
 import { ArticleList } from "./components/ArticleList";
+import { DateGroupedArticleList } from "./components/DateGroupedArticleList";
 import { WelcomeWizard } from "./components/WelcomeWizard";
 import { SettingsModal } from "./components/SettingsModal";
-import { 
-  useArticles, 
-  useStats, 
-  fetchNewArticles, 
-  markAllRead, 
+import {
+  useArticles,
+  useStats,
+  fetchNewArticles,
+  markAllRead,
   refreshRecommendations,
   checkInitialized,
   needsInitialization,
+  generateDailyRecommendations,
 } from "./hooks/useArticles";
 import { ArticleStatus } from "./types/article";
 import "./App.css";
 
-type FilterType = 'unread' | 'liked' | 'all';
+type FilterType = 'unread' | 'liked' | 'all' | 'daily';
 
 function App() {
   const [filter, setFilter] = useState<FilterType>('unread');
@@ -22,6 +24,7 @@ function App() {
   const [showWizard, setShowWizard] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const statusFilter = filter === 'unread' ? ArticleStatus.UNREAD 
     : filter === 'liked' ? ArticleStatus.LIKED 
@@ -117,6 +120,19 @@ function App() {
     }
   };
 
+  const handleGenerateDaily = async () => {
+    setGenerating(true);
+    try {
+      const count = await generateDailyRecommendations();
+      console.log(`Generated ${count} daily recommendations`);
+      refetchStats();
+    } catch (e) {
+      console.error('Generate daily failed:', e);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   // Show welcome wizard if not initialized
   if (showWizard) {
     return <WelcomeWizard onComplete={handleWizardComplete} />;
@@ -178,11 +194,17 @@ function App() {
           >
             喜欢
           </button>
-          <button 
+          <button
             className={filter === 'all' ? 'active' : ''}
             onClick={() => setFilter('all')}
           >
             全部
+          </button>
+          <button
+            className={filter === 'daily' ? 'active' : ''}
+            onClick={() => setFilter('daily')}
+          >
+            每日推荐
           </button>
         </div>
 
@@ -196,18 +218,28 @@ function App() {
           <button onClick={handleRefreshRecommendations}>
             🔄 刷新推荐
           </button>
+          <button onClick={handleGenerateDaily} disabled={generating}>
+            {generating ? '生成中...' : '📅 生成今日推荐'}
+          </button>
         </div>
       </div>
 
       {/* Article List */}
       <main className="main">
-        <ArticleList 
-          articles={articles}
-          loading={loading}
-          error={error}
-          onStatusChange={handleStatusChange}
-          currentTab={statusFilter}
-        />
+        {filter === 'daily' ? (
+          <DateGroupedArticleList
+            onStatusChange={handleStatusChange}
+            currentTab={null}
+          />
+        ) : (
+          <ArticleList
+            articles={articles}
+            loading={loading}
+            error={error}
+            onStatusChange={handleStatusChange}
+            currentTab={statusFilter}
+          />
+        )}
       </main>
 
       {/* Settings Modal */}

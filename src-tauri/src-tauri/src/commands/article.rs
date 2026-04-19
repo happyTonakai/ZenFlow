@@ -201,3 +201,36 @@ pub fn clean_old_articles(days: i32) -> Result<usize, String> {
     db::clean_old_articles(days)
         .map_err(|e| format!("清理失败: {}", e))
 }
+
+/// 获取所有推荐日期列表
+#[tauri::command]
+pub fn get_recommendation_dates() -> Result<Vec<String>, String> {
+    db::get_recommendation_dates()
+        .map_err(|e| format!("获取推荐日期失败: {}", e))
+}
+
+/// 按日期获取推荐文章
+#[tauri::command]
+pub fn get_articles_by_recommend_date(date: String) -> Result<Vec<db::Article>, String> {
+    db::get_articles_by_recommend_date(&date)
+        .map_err(|e| format!("获取推荐文章失败: {}", e))
+}
+
+/// 手动生成今日推荐批次
+#[tauri::command]
+pub async fn generate_daily_recommendations() -> Result<usize, String> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+
+    // 更新偏好
+    let _ = algorithm::update_user_preferences().await;
+
+    // 评分所有未读
+    algorithm::score_all_unread_articles().await
+        .map_err(|e| format!("评分失败: {}", e))?;
+
+    // 标记今日批次
+    let s = settings::get_settings()
+        .map_err(|e| format!("获取设置失败: {}", e))?;
+    db::tag_daily_recommendations(&today, s.daily_papers, s.diversity_ratio)
+        .map_err(|e| format!("标记推荐失败: {}", e))
+}

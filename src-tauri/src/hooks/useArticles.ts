@@ -190,6 +190,7 @@ export interface AppSettings {
   // 推荐参数
   daily_papers: number;
   diversity_ratio: number;
+  auto_refresh_recommendations: boolean;
 }
 
 export interface InitRequest {
@@ -266,4 +267,18 @@ export async function requestKeychainAccess(apiKey: string): Promise<boolean> {
 
 export async function extractPaperToClipboard(arxivId: string): Promise<string> {
   return await invoke<string>('extract_paper_to_clipboard', { arxivId });
+}
+
+// ========== 每日推荐 ==========
+
+export async function getRecommendationDates(): Promise<string[]> {
+  return await invoke<string[]>('get_recommendation_dates');
+}
+
+export async function getArticlesByRecommendDate(date: string): Promise<Article[]> {
+  return await invoke<Article[]>('get_articles_by_recommend_date', { date });
+}
+
+export async function generateDailyRecommendations(): Promise<number> {
+  return await invoke<number>('generate_daily_recommendations');
 }

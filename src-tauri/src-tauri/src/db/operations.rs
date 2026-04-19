@@ -28,6 +28,10 @@ pub struct Article {
     pub ax_downvotes: Option<i32>,
     pub comment: Option<String>,
     pub timestamp: Option<String>,
+    #[serde(rename = "recommendDate")]
+    pub recommend_date: Option<String>,
+    #[serde(rename = "batchOrder")]
+    pub batch_order: Option<i32>,
     #[serde(rename = "recommendationType")]
     pub recommendation_type: Option<String>,
 }
@@ -139,12 +143,14 @@ fn map_article_row(row: &rusqlite::Row) -> rusqlite::Result<Article> {
         ax_downvotes: row.get(13)?,
         comment: row.get(14)?,
         timestamp: row.get(15)?,
+        recommend_date: row.get(16)?,
+        batch_order: row.get(17)?,
         recommendation_type: None,
     })
 }
 
 const ARTICLE_COLUMNS: &str = "id, title, link, abstract, source, status, score,
-    translated_title, translated_abstract, author, category, hf_upvotes, ax_upvotes, ax_downvotes, comment, timestamp";
+    translated_title, translated_abstract, author, category, hf_upvotes, ax_upvotes, ax_downvotes, comment, timestamp, recommend_date, batch_order";
 
 /// 获取文章列表
 pub fn get_articles(status: Option<i32>, limit: usize, offset: usize) -> Result<Vec<Article>> {
@@ -464,6 +470,83 @@ pub fn update_article_translation(
     Ok(())
 }
 
+/// 标记每日推荐批次（为 top N 的未读文章打上 recommend_date 和 batch_order 标签）
+pub fn tag_daily_recommendations(date: &str, daily_papers: usize, diversity_ratio: f32) -> Result<usize> {
+    let mut conn = get_db()?;
+
+    // 清除该日期之前的标签
+    conn.execute(
+        "UPDATE articles SET recommend_date = NULL, batch_order = NULL WHERE recommend_date = ?1",
+        params![date],
+    )?;
+
+    // 获取所有有分数的未读文章，按分数降序
+    let all_articles = get_articles(None, 1000, 0)?;
+    let mut scored_articles: Vec<_> = all_articles
+        .into_iter()
+        .filter(|a| a.status == config::status::UNREAD && a.score > 0.0)
+        .collect();
+
+    scored_articles.sort_by(|a, b| {
+        b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let score_based_count = (daily_papers as f32 * (1.0 - diversity_ratio)).ceil() as usize;
+    let diversity_count = daily_papers - score_based_count;
+
+    // 70% 按分数取 top
+    let (score_part, remaining) = scored_articles.split_at(score_based_count.min(scored_articles.len()));
+
+    // 30% 从剩余中随机
+    let mut rng = rand::thread_rng();
+    let mut selected: Vec<Article> = score_part.to_vec();
+    if !remaining.is_empty() && diversity_count > 0 {
+        let count = diversity_count.min(remaining.len());
+        let chosen: Vec<&Article> = remaining.iter().choose_multiple(&mut rng, count);
+        let mut diversity: Vec<Article> = chosen.into_iter().cloned().collect();
+        diversity.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        selected.extend(diversity);
+    }
+
+    // 打标签
+    let tx = conn.transaction()?;
+    for (i, article) in selected.iter().enumerate() {
+        tx.execute(
+            "UPDATE articles SET recommend_date = ?1, batch_order = ?2 WHERE id = ?3",
+            params![date, i as i32, article.id],
+        )?;
+    }
+    tx.commit()?;
+
+    Ok(selected.len())
+}
+
+/// 按日期获取推荐文章
+pub fn get_articles_by_recommend_date(date: &str) -> Result<Vec<Article>> {
+    let conn = get_db()?;
+    let sql = format!(
+        "SELECT {} FROM articles WHERE recommend_date = ?1 ORDER BY batch_order ASC",
+        ARTICLE_COLUMNS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let articles = stmt
+        .query_map(params![date], map_article_row)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(articles)
+}
+
+/// 获取所有有推荐的日期列表（降序，最新的在前）
+pub fn get_recommendation_dates() -> Result<Vec<String>> {
+    let conn = get_db()?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT recommend_date FROM articles WHERE recommend_date IS NOT NULL ORDER BY recommend_date DESC",
+    )?;
+    let dates = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(dates)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,5 +745,52 @@ mod tests {
         let found = fetched.iter().find(|a| a.id == "test.trans").unwrap();
         assert_eq!(found.translated_title.as_deref(), Some("翻译标题"));
         assert_eq!(found.translated_abstract.as_deref(), Some("翻译摘要"));
+    }
+
+    #[test]
+    fn test_tag_daily_recommendations() {
+        setup_db();
+        let articles = vec![
+            make_article("test.tag1", "Tag Paper 1"),
+            make_article("test.tag2", "Tag Paper 2"),
+            make_article("test.tag3", "Tag Paper 3"),
+        ];
+        save_articles(&articles).unwrap();
+
+        // 设置分数
+        update_articles_scores(&[
+            ("test.tag1".to_string(), 0.9),
+            ("test.tag2".to_string(), 0.5),
+            ("test.tag3".to_string(), 0.3),
+        ]).unwrap();
+
+        let count = tag_daily_recommendations("2026-04-19", 2, 0.3).unwrap();
+        assert!(count >= 2);
+
+        let dates = get_recommendation_dates().unwrap();
+        assert!(dates.contains(&"2026-04-19".to_string()));
+
+        let articles = get_articles_by_recommend_date("2026-04-19").unwrap();
+        assert!(articles.len() >= 2);
+        // 第一篇应该分数最高
+        assert_eq!(articles[0].id, "test.tag1");
+    }
+
+    #[test]
+    fn test_tag_daily_recommendations_clears_old() {
+        setup_db();
+        let article = make_article("test.retag", "Retag Paper");
+        save_articles(&[article]).unwrap();
+        update_articles_scores(&[("test.retag".to_string(), 0.8)]).unwrap();
+
+        // 第一次标记
+        tag_daily_recommendations("2026-04-19", 10, 0.3).unwrap();
+        let articles = get_articles_by_recommend_date("2026-04-19").unwrap();
+        assert!(articles.iter().any(|a| a.id == "test.retag"));
+
+        // 第二次标记同一天，应该先清除再重新标记
+        tag_daily_recommendations("2026-04-19", 10, 0.3).unwrap();
+        let articles = get_articles_by_recommend_date("2026-04-19").unwrap();
+        assert!(articles.iter().any(|a| a.id == "test.retag"));
     }
 }

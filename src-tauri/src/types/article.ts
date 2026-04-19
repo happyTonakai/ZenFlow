@@ -28,6 +28,8 @@ export interface Article {
   category: string | null;
   comment: string | null;
   recommendationType?: 'score' | 'diversity';
+  recommendDate: string | null;
+  batchOrder: number | null;
 }
 
 // 统计数据

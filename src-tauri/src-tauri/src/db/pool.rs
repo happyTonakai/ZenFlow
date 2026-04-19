@@ -5,7 +5,7 @@ use r2d2::{Pool, PooledConnection};
 use r2d2_sqlite::SqliteConnectionManager;
 use std::sync::OnceLock;
 
-use super::schema::{SCHEMA_SQL, MIGRATION_SQL, MIGRATION_ADD_COMMENT};
+use super::schema::{SCHEMA_SQL, MIGRATION_SQL, MIGRATION_ADD_COMMENT, MIGRATION_ADD_RECOMMEND_DATE, MIGRATION_ADD_BATCH_ORDER};
 use crate::config::db_path;
 
 pub type DbPool = Pool<SqliteConnectionManager>;
@@ -41,6 +41,10 @@ pub fn init_db() -> Result<DbPool> {
         // 列已存在，忽略
     }
 
+    // 添加 recommend_date 和 batch_order 列
+    let _ = conn.execute(MIGRATION_ADD_RECOMMEND_DATE, []);
+    let _ = conn.execute(MIGRATION_ADD_BATCH_ORDER, []);
+
     DB_POOL.set(pool.clone()).map_err(|_| anyhow::anyhow!("Database pool already initialized"))?;
 
     tracing::info!("📦 数据库初始化完成: {}", db_path);
@@ -59,12 +63,14 @@ pub fn get_db() -> Result<DbConnection> {
 /// 创建内存数据库连接池（用于测试）
 #[cfg(test)]
 pub fn create_test_pool() -> Result<DbPool> {
-    let manager = SqliteConnectionManager::memory();
-    let pool = Pool::builder().max_size(1).build(manager)?;
+    let manager = SqliteConnectionManager::file("file::memory:?cache=shared");
+    let pool = Pool::builder().max_size(4).build(manager)?;
     let conn = pool.get()?;
     conn.execute_batch(SCHEMA_SQL)?;
     let _ = conn.execute_batch(MIGRATION_SQL);
     let _ = conn.execute(MIGRATION_ADD_COMMENT, []);
+    let _ = conn.execute(MIGRATION_ADD_RECOMMEND_DATE, []);
+    let _ = conn.execute(MIGRATION_ADD_BATCH_ORDER, []);
     Ok(pool)
 }
 
