@@ -261,3 +261,9 @@ export async function translateBatch(papers: TranslateRequest[]): Promise<Transl
 export async function requestKeychainAccess(apiKey: string): Promise<boolean> {
   return await invoke<boolean>('request_keychain_access', { apiKey });
 }
+
+// ========== 论文提取 ==========
+
+export async function extractPaperToClipboard(arxivId: string): Promise<string> {
+  return await invoke<string>('extract_paper_to_clipboard', { arxivId });
+}

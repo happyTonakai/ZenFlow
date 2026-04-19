@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Article, ArticleStatus } from '../types/article';
-import { updateArticleStatus, addComment } from '../hooks/useArticles';
+import { updateArticleStatus, addComment, extractPaperToClipboard } from '../hooks/useArticles';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -85,6 +85,8 @@ export function ArticleCard({ article, onStatusChange, currentTab: _currentTab }
   const [showComment, setShowComment] = useState(false);
   const [commentText, setCommentText] = useState(article.comment || '');
   const [savingComment, setSavingComment] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extracted, setExtracted] = useState(false);
 
   const handleSaveComment = async () => {
     setSavingComment(true);
@@ -95,6 +97,20 @@ export function ArticleCard({ article, onStatusChange, currentTab: _currentTab }
       console.error('Failed to save comment:', e);
     } finally {
       setSavingComment(false);
+    }
+  };
+
+  // 提取论文全文并复制到剪贴板
+  const handleExtract = async () => {
+    setExtracting(true);
+    try {
+      await extractPaperToClipboard(article.id);
+      setExtracted(true);
+      setTimeout(() => setExtracted(false), 3000);
+    } catch (e) {
+      console.error('Failed to extract paper:', e);
+    } finally {
+      setExtracting(false);
     }
   };
 
@@ -235,6 +251,14 @@ export function ArticleCard({ article, onStatusChange, currentTab: _currentTab }
             title={article.comment ? '编辑评论' : '添加评论'}
           >
             💬
+          </button>
+          <button
+            className={`btn-extract ${extracted ? 'extracted' : ''}`}
+            onClick={handleExtract}
+            disabled={extracting}
+            title="提取论文全文并复制到剪贴板"
+          >
+            {extracting ? '⏳' : extracted ? '✓' : '📋'}
           </button>
         </div>
       </div>

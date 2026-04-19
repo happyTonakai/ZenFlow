@@ -288,3 +288,24 @@
 .btn-comment-cancel:hover {
   background: var(--bg-tertiary);
 }
+
+/* 提取按钮 */
+.btn-extract {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-extract:hover {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.btn-extract:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.btn-extract.extracted {
+  background: var(--success);
+  color: var(--bg-primary);
+}
