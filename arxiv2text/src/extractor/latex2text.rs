@@ -6,10 +6,10 @@ use regex::Regex;
 use std::collections::HashMap;
 
 /// 将 LaTeX 源码转换为纯文本
-pub fn convert_latex_to_text(latex: &str) -> String {
+pub fn convert_latex_to_text(latex: &str, no_refs: bool) -> String {
     let text = remove_comments(latex);
     let text = strip_preamble(&text);
-    let text = strip_bibliography(&text);
+    let text = if no_refs { strip_bibliography(&text) } else { text };
     let text = expand_macros(&text);
     let text = convert_environments(&text);
     let text = convert_macros(&text);
@@ -1062,7 +1062,7 @@ mod tests {
 
     #[test]
     fn test_convert_inline_math_preserved() {
-        let result = convert_latex_to_text("Let $x = 1$ be a solution.");
+        let result = convert_latex_to_text("Let $x = 1$ be a solution.", false);
         assert!(result.contains("$"), "结果: {}", result);
     }
 
@@ -1084,7 +1084,7 @@ Let $f: \R \to \R$ be a continuous function \cite{ref1}.
 \end{thebibliography}
 \end{document}
 "#;
-        let result = convert_latex_to_text(input);
+        let result = convert_latex_to_text(input, true);
         assert!(result.contains("Introduction"), "结果: {}", result);
         assert!(result.contains("bounded"), "结果: {}", result);
         assert!(result.contains("We study"), "结果: {}", result);

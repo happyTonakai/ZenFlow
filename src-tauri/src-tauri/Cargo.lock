@@ -81,6 +81,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "arxiv2text"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "regex",
+ "reqwest 0.12.28",
+ "tar",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6227,6 +6241,7 @@ name = "zenflow"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arxiv2text",
  "chrono",
  "feed-rs",
  "flate2",

@@ -3,20 +3,28 @@
 use regex::Regex;
 
 /// 获取 arXiv HTML 版本并转换为纯文本
-pub async fn fetch_and_convert(client: &reqwest::Client, arxiv_id: &str) -> anyhow::Result<String> {
+pub async fn fetch_and_convert(
+    client: &reqwest::Client,
+    arxiv_id: &str,
+    no_refs: bool,
+) -> anyhow::Result<String> {
     let url = format!("https://arxiv.org/html/{}", arxiv_id);
     let resp = client.get(&url).send().await?;
     if !resp.status().is_success() {
         anyhow::bail!("获取 HTML 失败: HTTP {}", resp.status());
     }
     let html = resp.text().await?;
-    Ok(parse_html_to_text(&html))
+    Ok(parse_html_to_text(&html, no_refs))
 }
 
 /// 将 arXiv HTML 转换为纯文本
-fn parse_html_to_text(html: &str) -> String {
+fn parse_html_to_text(html: &str, no_refs: bool) -> String {
     let html = convert_mathml_to_latex(html);
-    let html = strip_unwanted_elements(&html);
+    let mut html = strip_unwanted_elements(&html);
+
+    if no_refs {
+        html = strip_references(&html);
+    }
 
     let mut parts: Vec<String> = Vec::new();
 
@@ -190,6 +198,33 @@ fn collapse_whitespace(text: &str) -> String {
     re.replace_all(text, " ").trim().to_string()
 }
 
+/// 剥离参考文献/引用相关的 section 和 div
+///
+/// 参考 arxiv2md 的做法：移除 class 包含 ltx_bibliography 的 section，
+/// 以及行内引用链接 (href="#bib.bib...")。
+fn strip_references(html: &str) -> String {
+    let mut result = html.to_string();
+
+    // 移除 ltx_bibliography section（参考文献章节）
+    // 用 r##"..."## 因为内容包含 "# 序列
+    let re = Regex::new(
+        r##"(?is)<section[^>]*class="[^"]*ltx_bibliography[^"]*"[^>]*>.*?</section>"##,
+    )
+    .unwrap();
+    result = re.replace_all(&result, "").to_string();
+
+    // 移除 ltx_bibitem 引用条目
+    let re =
+        Regex::new(r##"(?is)<div[^>]*class="[^"]*ltx_bibitem[^"]*"[^>]*>.*?</div>"##).unwrap();
+    result = re.replace_all(&result, "").to_string();
+
+    // 移除行内引用标签 [1], [2] 等 (链接到 #bib.bib...)
+    let re = Regex::new(r##"(?is)<a[^>]*href="#bib[^"]*"[^>]*>.*?</a>"##).unwrap();
+    result = re.replace_all(&result, "").to_string();
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,7 +272,7 @@ mod tests {
         </article>
         </body></html>
         "#;
-        let result = parse_html_to_text(html);
+        let result = parse_html_to_text(html, false);
         assert!(result.contains("Test Paper Title"), "结果: {}", result);
         assert!(result.contains("Introduction"), "结果: {}", result);
         assert!(result.contains("introduction paragraph"), "结果: {}", result);
@@ -256,7 +291,7 @@ mod tests {
         </article>
         </body></html>
         "#;
-        let result = parse_html_to_text(html);
+        let result = parse_html_to_text(html, false);
         assert!(result.contains("Math Paper"), "结果: {}", result);
         assert!(result.contains("$f(x) = x^2$"), "结果: {}", result);
     }
@@ -270,12 +305,58 @@ mod tests {
             .user_agent("ZenFlow/0.1.0")
             .build()
             .unwrap();
-        let text = fetch_and_convert(&client, "1706.03762").await.unwrap();
+        let text = fetch_and_convert(&client, "1706.03762", false).await.unwrap();
         assert!(
             text.to_lowercase().contains("attention"),
             "应该包含 'Attention', 实际长度: {}",
             text.len()
         );
         assert!(text.len() > 1000, "应该包含大量文本, 实际长度: {}", text.len());
+    }
+
+    #[test]
+    fn test_strip_references() {
+        let html = r##"
+        <article class="ltx_document">
+            <h1>Test Paper</h1>
+            <section>
+                <h2>Introduction</h2>
+                <p>Some text with a citation <a href="#bib.bib1">[1]</a>.</p>
+            </section>
+            <section class="ltx_bibliography">
+                <h2>References</h2>
+                <div class="ltx_bibitem">[1] Author, Title, 2020.</div>
+            </section>
+        </article>
+        "##;
+        let result = strip_references(html);
+        assert!(!result.contains("ltx_bibliography"), "结果: {}", result);
+        assert!(!result.contains("References"), "结果: {}", result);
+        assert!(result.contains("Introduction"), "结果: {}", result);
+        assert!(!result.contains("[1]"), "结果: {}", result);
+    }
+
+    #[test]
+    fn test_parse_html_no_refs() {
+        let html = r##"
+        <html><body>
+        <article class="ltx_document">
+            <h1 class="ltx_title ltx_title_document">Paper Title</h1>
+            <section>
+                <h2>Intro</h2>
+                <p>Content with ref <a href="#bib.bib2">[2]</a> inline.</p>
+            </section>
+            <section class="ltx_bibliography">
+                <h2>References</h2>
+                <p>[1] Ref A</p>
+                <p>[2] Ref B</p>
+            </section>
+        </article>
+        </body></html>
+        "##;
+        let result = parse_html_to_text(html, true);
+        assert!(result.contains("Paper Title"), "结果: {}", result);
+        assert!(result.contains("Intro"), "结果: {}", result);
+        assert!(!result.contains("References"), "结果: {}", result);
     }
 }

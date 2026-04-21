@@ -57,5 +57,8 @@ keyring = { version = "3", features = ["apple-native"] }
 flate2 = "1"
 tar = "0.4"
 
+# arXiv paper text extraction
+arxiv2text = { path = "../../arxiv2text" }
+
 [dev-dependencies]
 tempfile = "3"

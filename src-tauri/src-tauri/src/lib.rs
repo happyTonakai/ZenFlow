@@ -7,8 +7,12 @@ pub mod llm;
 pub mod algorithm;
 pub mod commands;
 pub mod settings;
-pub mod extractor;
 pub mod scheduler;
+
+/// Re-export extractor from arxiv2text crate
+pub mod extractor {
+    pub use arxiv2text::extractor::*;
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
